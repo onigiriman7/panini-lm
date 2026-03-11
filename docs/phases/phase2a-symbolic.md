@@ -225,3 +225,86 @@ VALIDATION_CASES = [
 - [Glossary](../GLOSSARY.md) — Kāraka, Vibhakti definitions
 - [Phase 1](phase1-morphology.md) — Input source
 - [Phase 3](phase3-attention.md) — Uses Matrix M for sparse routing
+
+---
+
+## Testing Guide
+
+### Running Tests
+
+```bash
+# Run all Phase 2A tests
+pytest tests/unit/test_phase2a.py -v
+
+# Run with coverage
+pytest tests/unit/test_phase2a.py --cov=panini_lm.phase2a_symbolic
+
+# Run specific test class
+pytest tests/unit/test_phase2a.py::TestSubjectVerbRule -v
+```
+
+### Test Categories
+
+| Category | Description | Test Class |
+|----------|-------------|------------|
+| Rule tests | Individual grammar rule behavior | `TestSubjectVerbRule`, `TestObjectVerbRule`, etc. |
+| Matrix tests | Adjacency matrix construction | `TestBuildAdjacencyMatrix` |
+| Sparsity tests | Verify expected sparsity levels | `TestSparsity` |
+| Metadata tests | Meta computation correctness | `TestComputeAdjacencyMeta` |
+
+### Usage Examples
+
+```python
+from panini_lm.phase2a_symbolic import build_adjacency_matrix, get_default_rules
+
+# Build adjacency matrix from tokens
+tokens = [
+    {"surface": "rāmaḥ", "stem": "rāma", "type": "subanta", 
+     "attributes": {"vibhakti": 1, "vacana": 1}},
+    {"surface": "gacchati", "stem": "gam", "type": "tinanta",
+     "attributes": {"vacana": 1}}
+]
+
+adj = build_adjacency_matrix(tokens)
+
+# Check matrix shape
+print(f"Matrix shape: {adj.matrix.shape}")  # (2, 2)
+
+# Check valid edges
+print(f"Valid edges: {adj.meta['num_valid_edges']}")
+
+# Check sparsity
+print(f"Sparsity: {adj.meta['sparsity_ratio']:.2%}")
+
+# View links
+for link in adj.links:
+    print(f"{link['source_idx']} → {link['target_idx']}: {link['rule_applied']}")
+
+# Custom rules
+from panini_lm.phase2a_symbolic import SubjectVerbRule, ObjectVerbRule
+
+custom_rules = [SubjectVerbRule(), ObjectVerbRule()]
+adj_custom = build_adjacency_matrix(tokens, rules=custom_rules)
+```
+
+### Debugging Matrix
+
+```python
+from panini_lm.phase2a_symbolic.matrix_builder import visualize_matrix
+
+# ASCII visualization
+print(visualize_matrix(adj, tokens))
+```
+
+### Key Assertions
+
+```python
+# Subject-verb link should exist
+assert adj.matrix[0, 1] == 0.0
+
+# Self-attention always exists
+assert adj.matrix[0, 0] == 0.0
+
+# Average connections per token (target: 2-5)
+assert 1.0 <= adj.meta["avg_connections_per_token"] <= 5.0
+```

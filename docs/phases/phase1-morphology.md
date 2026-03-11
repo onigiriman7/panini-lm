@@ -166,6 +166,23 @@ def safe_analyze(pada: str) -> MorphToken:
 
 ## Test Specifications
 
+### Running Tests
+
+```bash
+# Run all Phase 1 tests
+pytest tests/unit/test_phase1.py -v
+
+# Run specific test class
+pytest tests/unit/test_phase1.py::TestHeritageBackend -v
+
+# Run with coverage
+pytest tests/unit/test_phase1.py --cov=panini_lm.phase1_morphology
+```
+
+### Test File Location
+
+All Phase 1 tests are in `tests/unit/test_phase1.py`.
+
 ### Unit Tests
 
 ```python
