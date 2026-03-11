@@ -1,22 +1,31 @@
 # Panini-LM: Neuro-Symbolic Language Modeling via Pāṇinian Algebraic Priors
 
-# Overview
+> **Quick navigation**: [INDEX](INDEX.md) — [GLOSSARY](GLOSSARY.md) — [Data Types](types/data-contracts.md) — [Tests](testing/test-specifications.md)
 
-This repository documents the Pāṇinian Neuro-Symbolic architecture. The documentation is now organized by phases.
+---
 
-Phase documents (canonical):
+## Overview
 
-- [docs/Phase1_Morphological_Ingestion.md](docs/Phase1_Morphological_Ingestion.md)
-- [docs/Phase2_Symbolic_Syntax.md](docs/Phase2_Symbolic_Syntax.md)
-- [docs/Phase3_Sparse_Paninian_Attention.md](docs/Phase3_Sparse_Paninian_Attention.md)
-- [docs/Phase4_Semantic_Maturation.md](docs/Phase4_Semantic_Maturation.md)
-- [docs/Phase5_Grammar_Constrained_Decoding.md](docs/Phase5_Grammar_Constrained_Decoding.md)
+This repository documents the Pāṇinian Neuro-Symbolic architecture for Sanskrit language modeling. The documentation is organized by architecture phases.
 
-Integration guide:
+### Phase Documents
 
-- [docs/ExternalLibraryIntegration.md](docs/ExternalLibraryIntegration.md)
+| Phase | Document | Description |
+|-------|----------|-------------|
+| 1 | [Morphological Ingestion](phases/phase1-morphology.md) | Sandhi/Samāsa resolution, token extraction |
+| 2A | [Symbolic Engine](phases/phase2a-symbolic.md) | Deterministic adjacency matrix M |
+| 2B | [Neural Engine](phases/phase2b-neural.md) | Position-agnostic Q, K, V embeddings |
+| 3 | [Sparse Attention](phases/phase3-attention.md) | O(N·k) grammatical routing |
+| 4 | [FFN / Maturation](phases/phase4-ffn.md) | Compact SwiGLU (1.5-2x expansion) |
+| 5 | [Constrained Decoding](phases/phase5-decoding.md) | 100% grammatical output guarantee |
 
-Legacy notes and implementation sketches are retained in the `docs/` folder but the phase documents above are the authoritative specification.
+### Integration Guides
+
+- [Integration Overview](integration/README.md) — External library summary
+- [vidyut-prakriya](integration/vidyut.md) — Primary morphological backend
+- [sanskrit-heritage](integration/sanskrit-heritage.md) — Fallback implementation
+- [Triton Kernels](integration/triton.md) — GPU sparse attention
+- [samsadhani](integration/samsadhani.md) — Kāraka analysis API
 
 Current Large Language Models (LLMs) rely on dense parameter networks and autoregressive attention mechanisms to statistically approximate syntactic structures. For morphologically rich, free-word-order languages like Sanskrit, this results in extreme computational inefficiencies, high "token taxes," and arbitrary positional dependencies.
 
@@ -33,9 +42,34 @@ This architecture fundamentally reduces the computational complexity of syntacti
 
 ## Repository Structure
 
-- `pseudo-code.py`: PyTorch implementation of the Panini-LM architecture
-- `docs/`: Detailed documentation components
-- `README.md`: Project overview and setup instructions
+```
+panini-lm/
+├── docs/
+│   ├── INDEX.md              # Central navigation
+│   ├── GLOSSARY.md           # Sanskrit & architecture terms
+│   ├── Overview.md           # This file
+│   ├── phases/               # Canonical phase documentation
+│   │   ├── README.md
+│   │   ├── phase1-morphology.md
+│   │   ├── phase2a-symbolic.md
+│   │   ├── phase2b-neural.md
+│   │   ├── phase3-attention.md
+│   │   ├── phase4-ffn.md
+│   │   └── phase5-decoding.md
+│   ├── integration/          # External library guides
+│   │   ├── README.md
+│   │   ├── vidyut.md
+│   │   ├── sanskrit-heritage.md
+│   │   ├── triton.md
+│   │   └── samsadhani.md
+│   ├── types/                # Data contracts
+│   │   └── data-contracts.md
+│   └── testing/              # Test specifications
+│       └── test-specifications.md
+├── pseudo-code.py            # PyTorch implementation reference
+├── external-module.txt       # External integration blueprint
+└── README.md                 # Project overview
+```
 
 ## Quick Start
 
@@ -45,21 +79,19 @@ git clone https://github.com/onigiriman7/panini-lm.git
 cd panini-lm
 
 # Install dependencies
-pip install torch external-nlp custom-kernels
+pip install torch vidyut_py triton
 
 # Run the model
 python pseudo-code.py
 ```
 
-## Documentation
+## Further Reading
 
-For detailed information, see the documentation components in the `docs/` directory:
-
-- [Architecture Overview](docs/Architecture.md)
-- [Symbolic Engine](docs/SymbolicEngine.md)
-- [Neural Engine](docs/NeuralEngine.md)
-- [Attention Mechanism](docs/AttentionMechanism.md)
-- [Decoding Process](docs/Decoding.md)
-- [Efficiency Analysis](docs/Efficiency.md)
-- [Implementation Details](docs/Implementation.md)
-- [Code Documentation](docs/PseudoCode.md)
+| Topic | Document |
+|-------|----------|
+| Full architecture | [INDEX.md](INDEX.md) |
+| Terminology | [GLOSSARY.md](GLOSSARY.md) |
+| Data structures | [types/data-contracts.md](types/data-contracts.md) |
+| Testing | [testing/test-specifications.md](testing/test-specifications.md) |
+| Legacy architecture | [general/Architecture.md](general/Architecture.md) |
+| Legacy efficiency | [general/Efficiency.md](general/Efficiency.md) |

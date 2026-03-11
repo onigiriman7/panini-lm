@@ -1,0 +1,58 @@
+Part B: 実装ステップ
+Phase 0: 基盤構築 (並列可能)
+core/types.py — 全データ契約をPydanticモデルで定義
+core/exceptions.py — カスタム例外クラス
+config.py — dataclassベースのハイパーパラメータ
+Phase 1: 形態素解析 (Phase 0後)
+phase1_morphology/interface.py — ABC定義 (入力: str → 出力: List[MorphToken])
+vidyut_backend.py — PyO3ラッパー + サンディ解決
+heritage_backend.py — フォールバック実装
+テスト: 既知サンスクリット文の決定論的出力検証
+Phase 2A: シンボリックエンジン (Phase 1後)
+karaka_mapper.py — 主語-動詞、Kāraka関係抽出
+rule_engine.py — Aṣṭādhyāyīの主要Sūtra実装
+matrix_builder.py — 隣接行列M生成 (N×N, スパース)
+テスト: スパース度検証 (k≈2-3接続/トークン)、文法リンク正確性
+Phase 2B: ニューラルトラック (Phase 0後、Phase 1と並列可)
+tokenizer.py — stem+type → ID変換
+embedding.py — nn.Embedding (位置エンコーディングなし)
+projections.py — Q, K, V 射影
+テスト: ラウンドトリップ変換、出力形状検証
+Phase 3: スパースアテンション (Phase 2A, 2B後)
+pytorch_fallback.py — 標準実装（正確性基準）
+triton_kernel.py — ブロックスパース最適化カーネル
+フォールバックディスパッチャ
+テスト: Triton vs PyTorch数値一致 (atol=1e-5)
+Phase 4: FFN (Phase 3後)
+semantic_ffn.py — SwiGLU FFN (拡張係数1.5x-2x)
+Phase 5: 制約付きデコード (Phase 1, 4後)
+grammar_constraint.py — 形態素状態→許可トークンマスク
+decoder.py — 文法制約付きデコード
+テスト: 生成文の100%文法正確性検証
+Phase 6: 統合 (全Step後)
+model.py — 全モジュール結合
+E2Eテスト + CI/CDパイプライン
+関連ファイル
+external-module.txt — 改善対象（型定義、エラーハンドリング追加）
+pseudo-code.py — _build_adjacency_matrix, generate メソッドを参照実装化
+ExternalLibraryIntegration.md — ライブラリ詳細仕様
+phase-wise — 各フェーズの仕様
+検証計画
+モジュール	テスト内容	成功基準
+Phase 1	サンディ分解	既知コーパスで決定論的出力一致
+Phase 2A	行列スパース度	k ≈ 2-3 接続/トークン
+Phase 3	カーネル正確性	PyTorch参照と数値一致
+Phase 5	文法正確性	生成トークン100%文法的に正しい
+E2E	性能	FLOPs 50-200x削減、90%+メモリ削減
+決定事項
+フォールバック: vidyut-prakriya → sanskrit-heritage (自動)
+位置エンコーディング: 明示的に不使用（自由語順対応）
+FFN拡張係数: 1.5x-2x（標準4xより縮小）
+スコープ外: 学習データ準備、大規模チューニング
+追加検討事項
+Aṣṭādhyāyīルールセット: 最小実装に必要なSūtraは？ → 推奨: 主語-動詞一致、基本Kāraka関係から開始
+samsadhani API可用性: パブリックAPIが利用不可の場合、ローカルKāraka計算実装が必要
+学習コーパス: Sanskrit Wikipedia / Digital Corpus of Sanskrit のライセンス確認
+これらの追加事項について、方針のご確認をお願いできますか？
+
+Claude Opus 4.5 • 3x
