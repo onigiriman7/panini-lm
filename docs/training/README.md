@@ -16,46 +16,66 @@
 
 ## Model Size
 
+### The Token Compression Breakthrough
+
+Panini-LM achieves a **12× reduction in embedding parameters** by using **Factorized Embeddings** instead of standard vocabulary lookup. The model does not embed fully inflected words (*padas*) — it constructs embeddings dynamically from morphological primitives.
+
+| Approach | Vocabulary | Embedding Parameters |
+|----------|------------|---------------------|
+| **Standard Transformer** | 50,000 surface forms | 50,000 × 512 = **25,600,000** |
+| **Panini-LM** | ~4,000 primitives | See breakdown below = **~2,060,000** |
+
+**Result**: Zero OOV errors for any valid Sanskrit inflection + radical parameter reduction.
+
 ### Parameter Breakdown
 
 | Component | Formula | Default Config | Parameters |
 |-----------|---------|----------------|------------|
-| Token Embedding | `vocab_size × d_model` | 50,000 × 512 | 25,600,000 |
-| Type Embedding | `num_types × d_model` | 7 × 512 | 3,584 |
+| **Factorized Embeddings** | | | |
+| └─ Root Embedding | `4000 × d_model` | 4,000 × 512 | **2,048,000** |
+| └─ Type Embedding | `7 × d_model` | 7 × 512 | 3,584 |
+| └─ Vibhakti Embedding | `9 × d_model` | 9 × 512 | 4,608 |
+| └─ Vacana Embedding | `4 × d_model` | 4 × 512 | 2,048 |
+| └─ Purusa Embedding | `4 × d_model` | 4 × 512 | 2,048 |
+| **Embedding Total** | — | — | **2,060,288** |
 | Per-Layer Attention | `4 × d_model²` | 4 × 512² | 1,048,576 |
 | Per-Layer FFN (SwiGLU) | `3 × d_model × d_ff` | 3 × 512 × 768 | 1,179,648 |
 | Per-Layer Norms | `2 × d_model × 2` | 2 × 512 × 2 | 2,048 |
 | **Per Layer Total** | — | — | **~2.2M** |
 | **× num_layers** | — | × 6 | **~13.4M** |
-| Output Head | Tied with embedding | — | 0 |
+| Output Head | `4000 × d_model` (tied or untied) | 4,000 × 512 | 2,048,000 |
 
 ### Configuration Presets
 
 | Config | d_model | heads | layers | FFN expansion | **Total Parameters** |
 |--------|---------|-------|--------|---------------|---------------------|
-| **Small** | 256 | 4 | 4 | 1.5× | **~15M** |
-| **Default** | 512 | 8 | 6 | 1.5× | **~39M** |
-| **Base** | 768 | 12 | 8 | 1.5× | **~85M** |
-| **Large** | 1024 | 16 | 12 | 2.0× | **~180M** |
+| **Small** | 256 | 4 | 4 | 1.5× | **~8M** |
+| **Default** | 512 | 8 | 6 | 1.5× | **~18M** |
+| **Base** | 768 | 12 | 8 | 1.5× | **~45M** |
+| **Large** | 1024 | 16 | 12 | 2.0× | **~100M** |
 
 ### Comparison with Other Models
 
-| Model | Parameters | Notes |
-|-------|------------|-------|
-| GPT-2 Small | 117M | General English LM |
-| BERT-base | 110M | Bidirectional encoder |
-| DistilBERT | 66M | Distilled knowledge |
-| **Panini-LM Default** | **~39M** | Sanskrit-specific, grammar-assisted |
+| Model | Parameters | Vocabulary | Notes |
+|-------|------------|------------|-------|
+| GPT-2 Small | 117M | 50,257 | General English LM |
+| BERT-base | 110M | 30,522 | Bidirectional encoder |
+| DistilBERT | 66M | 30,522 | Distilled knowledge |
+| **Panini-LM Default** | **~18M** | **~4,000** | Sanskrit-specific, grammar-assisted |
 
-**Why smaller?** Panini-LM offloads syntax to deterministic Phase 2A rules, uses no positional encoding, and employs reduced FFN expansion (1.5× vs 4×).
+**Why is Panini-LM so much smaller?**
+1. **Factorized Embeddings**: 12× fewer embedding parameters
+2. **Morphological Offloading**: Syntax handled by deterministic Phase 2A rules
+3. **No Positional Encoding**: Free word order → position should not bias attention
+4. **Reduced FFN Expansion**: 1.5× vs 4× standard — semantics need less capacity
 
 ---
 
 ## Dataset Structure
 
-### Training Data Format
+### Training Data Format (Factorized Tensors)
 
-Training data is pre-processed and stored in JSON for efficient loading:
+Training data uses **factorized tensor representation** instead of flat `token_ids`. Each morphological dimension has its own ID array:
 
 ```json
 {
@@ -63,8 +83,11 @@ Training data is pre-processed and stored in JSON for efficient loading:
     "source": "gita.txt",
     "created_at": "2026-03-15T10:30:00",
     "panini_lm_version": "0.1.0",
-    "vocab_size": 3841,
-    "num_types": 7
+    "vocab_size": 4000,
+    "num_types": 7,
+    "num_vibhakti": 9,
+    "num_vacana": 4,
+    "num_purusa": 4
   },
   
   "vocab": {
@@ -73,9 +96,11 @@ Training data is pre-processed and stored in JSON for efficient loading:
     "[BOS]": 2,
     "[EOS]": 3,
     "[MASK]": 4,
-    "च": 5,
-    "न": 6,
-    "सः": 7,
+    "रम्": 5,
+    "गम्": 6,
+    "भू": 7,
+    "राम": 100,
+    "गृह": 101,
     ...
   },
   
@@ -86,33 +111,37 @@ Training data is pre-processed and stored in JSON for efficient loading:
     "krdanta": 3,
     "taddhita": 4,
     "samasa": 5,
-    "unknown": 6
+    "none": 6
   },
   
   "samples": [
     {
       "id": "ch01_s0001",
       "chapter": 1,
-      "raw_text": "धृतराष्ट्रः उवाच — हे सञ्जय...",
+      "raw_text": "रामो गृहं गच्छति",
       
-      "token_ids": [2, 1130, 17, 7, 234, 89, ..., 3],
-      "type_ids": [6, 0, 1, 2, 0, 0, ..., 6],
-      "target_ids": [1130, 17, 7, 234, 89, ..., 0],
+      "root_ids": [2, 100, 101, 6, 3],
+      "type_ids": [6, 0, 0, 1, 6],
+      "vibhakti_ids": [0, 1, 2, 0, 0],
+      "vacana_ids": [0, 1, 1, 1, 0],
+      "purusa_ids": [0, 0, 0, 1, 0],
+      
+      "target_root_ids": [100, 101, 6, 3, 0],
       
       "adjacency_edges": [
-        {"src": 1, "tgt": 2, "link_type": "kartā-kriyā"},
-        {"src": 2, "tgt": 1, "link_type": "kartā-kriyā"},
-        {"src": 1, "tgt": 1, "link_type": "sva-sambandha"},
+        {"src": 1, "tgt": 3, "link_type": "kartā-kriyā"},
+        {"src": 2, "tgt": 3, "link_type": "karma-kriyā"},
         ...
       ],
       
-      "seq_len": 16,
-      "num_edges": 40,
-      "sparsity": 0.156,
+      "seq_len": 5,
+      "num_edges": 6,
+      "sparsity": 0.24,
       
       "tokens": [
-        {"surface": "धृतराष्ट्रः", "stem": "धृतराष्ट्र", "type": "subanta", "attributes": {...}},
-        ...
+        {"surface": "रामः", "stem": "राम", "type": "subanta", "attributes": {"vibhakti": 1, "vacana": 1, "linga": "m"}},
+        {"surface": "गृहम्", "stem": "गृह", "type": "subanta", "attributes": {"vibhakti": 2, "vacana": 1, "linga": "n"}},
+        {"surface": "गच्छति", "stem": "गम्", "type": "tinanta", "attributes": {"purusa": 1, "vacana": 1, "lakara": "lat"}}
       ]
     },
     ...
@@ -132,11 +161,23 @@ Training data is pre-processed and stored in JSON for efficient loading:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `token_ids` | `List[int]` | Integer IDs including `[BOS]` and `[EOS]` |
-| `type_ids` | `List[int]` | Token type encodings (0=subanta, 1=tinanta, etc.) |
-| `target_ids` | `List[int]` | Shifted `token_ids` for next-token prediction |
-| `adjacency_edges` | `List[{src, tgt, link_type}]` | Sparse grammatical edges |
+| `root_ids` | `List[int]` | Root/stem IDs from ~4000 primitive vocabulary |
+| `type_ids` | `List[int]` | Token type: 0=subanta, 1=tiṅanta, 2=avyaya, etc. |
+| `vibhakti_ids` | `List[int]` | Case: 0=none, 1-7=cases, 8=vocative |
+| `vacana_ids` | `List[int]` | Number: 0=none, 1=sing, 2=dual, 3=plural |
+| `purusa_ids` | `List[int]` | Person: 0=none, 1=3rd, 2=2nd, 3=1st |
+| `target_root_ids` | `List[int]` | Shifted `root_ids` for next-token prediction |
+| `adjacency_edges` | `List[{...}]` | Sparse grammatical edges for attention mask |
 | `tokens` | `List[MorphToken]` | Full morphological analysis (for debugging) |
+
+### Why Factorized Representation?
+
+| Feature | Flat `token_ids` | Factorized Tensors |
+|---------|------------------|-------------------|
+| OOV handling | Unknown inflection → `[UNK]` | **Zero OOV** — compose from primitives |
+| Vocab size | 50,000+ | **~4,000** |
+| Embedding params | 25.6M | **2.06M** |
+| Morphological structure | Lost in ID lookup | **Preserved structurally** |
 
 ### Why Pre-process?
 
@@ -155,25 +196,28 @@ Pre-processing runs Phase 1 and 2A once; training reuses the results every epoch
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Training Loop                         │
+│           Training Loop (Factorized Embeddings)          │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
 │  For each batch:                                         │
 │                                                          │
-│  1. Load pre-computed:                                   │
-│     • token_ids, type_ids → Model input                  │
-│     • target_ids → Cross-entropy labels                  │
+│  1. Load pre-computed FACTORIZED tensors:                │
+│     • root_ids, type_ids, vibhakti_ids,                  │
+│       vacana_ids, purusa_ids → Model input               │
+│     • target_root_ids → Cross-entropy labels             │
 │     • adjacency_edges → Build attention mask M           │
 │                                                          │
 │  2. Forward pass (Phases 2B → 5):                        │
-│     • Embed tokens (no positional encoding)              │
+│     • FACTORIZED EMBEDDING: Sum of 5 primitive vectors   │
+│       E(word) = E(root) + E(type) + E(vibhakti) +        │
+│                 E(vacana) + E(purusa)                    │
 │     • Compute Q, K, V                                    │
 │     • Apply sparse attention with mask M                 │
 │     • FFN transformation                                 │
-│     • Project to logits                                  │
+│     • Project to logits (~4000 vocabulary)               │
 │                                                          │
 │  3. Loss computation:                                    │
-│     • Primary: CrossEntropy(logits, target_ids)          │
+│     • Primary: CrossEntropy(logits, target_root_ids)     │
 │     • Optional: Attention regularization on M            │
 │                                                          │
 │  4. Backward + Optimizer step                            │
@@ -183,10 +227,10 @@ Pre-processing runs Phase 1 and 2A once; training reuses the results every epoch
 
 ### Loss Functions
 
-**Primary Loss** — Next-token prediction:
+**Primary Loss** — Next-root prediction (vocab ~4000):
 ```python
 loss = F.cross_entropy(
-    logits.view(-1, vocab_size),   # (batch * seq, vocab_size)
+    logits.view(-1, vocab_size),   # (batch * seq, ~4000)
     target_ids.view(-1),           # (batch * seq,)
     ignore_index=PAD_ID
 )
@@ -272,7 +316,7 @@ python scripts/training_data_builder.py gita.txt -o training.json -v
 
 ## Training Loop
 
-### PyTorch DataLoader
+### PyTorch DataLoader (Factorized Tensors)
 
 ```python
 import json
@@ -280,6 +324,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 class PaniniDataset(Dataset):
+    """Dataset for Panini-LM with factorized token representation."""
+    
     def __init__(self, path: str):
         with open(path) as f:
             data = json.load(f)
@@ -292,29 +338,36 @@ class PaniniDataset(Dataset):
     def __getitem__(self, idx):
         s = self.samples[idx]
         return {
-            "token_ids": torch.tensor(s["token_ids"]),
+            # Factorized input tensors (5 parallel ID arrays)
+            "root_ids": torch.tensor(s["root_ids"]),
             "type_ids": torch.tensor(s["type_ids"]),
-            "target_ids": torch.tensor(s["target_ids"]),
+            "vibhakti_ids": torch.tensor(s["vibhakti_ids"]),
+            "vacana_ids": torch.tensor(s["vacana_ids"]),
+            "purusa_ids": torch.tensor(s["purusa_ids"]),
+            # Target for next-token prediction
+            "target_root_ids": torch.tensor(s["target_root_ids"]),
+            # Structural data
             "edges": s["adjacency_edges"],
             "seq_len": s["seq_len"],
         }
 
 def collate_fn(batch):
-    """Pad sequences and build adjacency matrices."""
+    """Pad all factorized tensors and build adjacency matrices."""
     max_len = max(b["seq_len"] for b in batch)
     
-    token_ids = torch.stack([
-        F.pad(b["token_ids"], (0, max_len - b["seq_len"]))
-        for b in batch
-    ])
-    type_ids = torch.stack([
-        F.pad(b["type_ids"], (0, max_len - b["seq_len"]))
-        for b in batch
-    ])
-    target_ids = torch.stack([
-        F.pad(b["target_ids"], (0, max_len - b["seq_len"]))
-        for b in batch
-    ])
+    def stack_and_pad(key):
+        return torch.stack([
+            F.pad(b[key], (0, max_len - b["seq_len"]))
+            for b in batch
+        ])
+    
+    # Pad all factorized input tensors
+    root_ids = stack_and_pad("root_ids")
+    type_ids = stack_and_pad("type_ids")
+    vibhakti_ids = stack_and_pad("vibhakti_ids")
+    vacana_ids = stack_and_pad("vacana_ids")
+    purusa_ids = stack_and_pad("purusa_ids")
+    target_root_ids = stack_and_pad("target_root_ids")
     
     # Build attention masks from edges
     adj_matrices = []
@@ -328,11 +381,16 @@ def collate_fn(batch):
         adj_matrices.append(M)
     
     return {
-        "token_ids": token_ids,
+        # Factorized input batch (FactorizedTokenBatch)
+        "root_ids": root_ids,
         "type_ids": type_ids,
-        "target_ids": target_ids,
+        "vibhakti_ids": vibhakti_ids,
+        "vacana_ids": vacana_ids,
+        "purusa_ids": purusa_ids,
+        # Targets and masks
+        "target_root_ids": target_root_ids,
         "adjacency_matrix": torch.stack(adj_matrices),
-        "padding_mask": token_ids != PAD_ID,
+        "padding_mask": root_ids != PAD_ID,
     }
 ```
 
@@ -342,17 +400,21 @@ def collate_fn(batch):
 def train_step(model, batch, optimizer):
     optimizer.zero_grad()
     
-    # Forward pass
+    # Forward pass with factorized inputs
     logits = model(
-        token_ids=batch["token_ids"],
+        root_ids=batch["root_ids"],
         type_ids=batch["type_ids"],
+        vibhakti_ids=batch["vibhakti_ids"],
+        vacana_ids=batch["vacana_ids"],
+        purusa_ids=batch["purusa_ids"],
         adjacency_matrix=batch["adjacency_matrix"],
     )
     
-    # Loss
+    # Loss — predict the next ROOT (semantic content)
+    # Note: vocab_size is ~4000, not 50,000
     loss = F.cross_entropy(
-        logits.view(-1, model.vocab_size),
-        batch["target_ids"].view(-1),
+        logits.view(-1, model.vocab_size),  # (batch * seq, 4000)
+        batch["target_root_ids"].view(-1),  # (batch * seq,)
         ignore_index=PAD_ID,
     )
     
@@ -372,6 +434,7 @@ def train_step(model, batch, optimizer):
 |--------|----------|-----------|
 | Phase 1 | Pre-computed | Run live on input |
 | Phase 2A | Pre-computed → `adjacency_edges` | Run live on tokens |
+| Factorization | Pre-computed → 5 ID tensors | Run live → 5 ID tensors |
 | Phase 2B-5 | Forward pass | Forward pass |
 | Decoding | Teacher forcing | Autoregressive + grammar mask |
 
@@ -385,20 +448,31 @@ def generate(model, text: str, max_length: int = 50):
     # Phase 2A: Live adjacency computation
     adjacency = build_adjacency_matrix(tokens)
     
-    # Encode
-    token_ids = tokenizer.encode(tokens)
+    # Encode into factorized tensors
+    factorized = tokenizer.encode_factorized(tokens)
+    # Returns: root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids
     
     # Generate autoregressively
     for _ in range(max_length):
-        logits = model(token_ids, adjacency.matrix)
-        grammar_mask = compute_grammar_mask(state, vocab)
-        next_token = sample(logits[-1] + grammar_mask)
+        logits = model(
+            root_ids=factorized["root_ids"],
+            type_ids=factorized["type_ids"],
+            vibhakti_ids=factorized["vibhakti_ids"],
+            vacana_ids=factorized["vacana_ids"],
+            purusa_ids=factorized["purusa_ids"],
+            adjacency_matrix=adjacency.matrix,
+        )
         
-        if next_token == EOS_ID:
+        # Grammar-constrained decoding
+        grammar_mask = compute_grammar_mask(state, vocab)
+        next_root = sample(logits[-1] + grammar_mask)
+        
+        if next_root == EOS_ID:
             break
         
-        token_ids = torch.cat([token_ids, next_token])
-        state = update_state(state, next_token)
+        # Update factorized tensors for next step
+        factorized = extend_factorized(factorized, next_root, state)
+        state = update_state(state, next_root)
     
-    return tokenizer.decode(token_ids)
+    return tokenizer.decode_factorized(factorized)
 ```

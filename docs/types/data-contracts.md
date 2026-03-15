@@ -281,48 +281,163 @@ phase2a_output: Phase2AOutput = {
 
 ## Phase 2B Types
 
-### VocabMapping
+### Vocabulary Configuration (~4,000 primitives)
 
-Vocabulary configuration.
+Because Phase 1 decomposes words into pure mathematical primitives, the vocabulary is strictly limited:
+
+| Category | Count | Description |
+|----------|-------|-------------|
+| **Dhātus** (Verbal roots) | ~2,000 | √gam, √bhū, √kṛ, √as, etc. |
+| **Upasargas** (Prefixes) | ~20 | pra-, upa-, sam-, vi-, etc. |
+| **Pratyayas** (Core affixes) | ~100-200 | -ta, -tavya, -ya, etc. |
+| **Prātipadikas** (Nominal stems) | ~1,500 | rāma-, gṛha-, deva-, etc. |
+| **Special tokens** | ~10 | [PAD], [UNK], [BOS], [EOS], [MASK] |
+| **Total** | **~4,000** | vs. 50,000+ in standard LLMs |
+
+### VocabMapping
 
 ```python
 class VocabMapping(TypedDict):
     """
-    Vocabulary mapping for tokenization.
+    Vocabulary mapping for factorized tokenization.
+    
+    Unlike standard LLMs with 50k+ surface forms, Panini-LM maps only
+    morphological primitives: roots, stems, and special tokens.
     """
-    stem_to_id: Dict[str, int]
-    """Mapping from stem string to integer ID."""
+    root_to_id: Dict[str, int]
+    """Mapping from root/stem string to integer ID (~4000 entries)."""
     
-    type_to_id: Dict[str, int]
-    """Mapping from token type to integer ID."""
-    
-    id_to_stem: Dict[int, str]
+    id_to_root: Dict[int, str]
     """Reverse mapping for decoding."""
     
     special_tokens: Dict[str, int]
-    """Special tokens: <pad>, <unk>, <bos>, <eos>."""
+    """Special tokens: [PAD]=0, [UNK]=1, [BOS]=2, [EOS]=3, [MASK]=4."""
     
     vocab_size: int
-    """Total vocabulary size."""
+    """Total vocabulary size (~4000)."""
 ```
 
-### TokenBatch
-
-Batched token IDs.
+### Grammatical ID Mappings
 
 ```python
-class TokenBatch(TypedDict):
+# Token type encoding
+TYPE_TO_ID = {
+    "subanta": 0,    # Nominal (noun/adjective/pronoun)
+    "tinanta": 1,    # Finite verb
+    "avyaya": 2,     # Indeclinable (particle/conjunction)
+    "krdanta": 3,    # Verbal derivative (participle/infinitive)
+    "taddhita": 4,   # Secondary derivative
+    "samasa": 5,     # Compound
+    "none": 6,       # Special tokens
+}
+
+# Case (vibhakti) encoding
+VIBHAKTI_TO_ID = {
+    "none": 0,       # Non-nominals or special tokens
+    1: 1,            # Prathamā (nominative)
+    2: 2,            # Dvitīyā (accusative)
+    3: 3,            # Tṛtīyā (instrumental)
+    4: 4,            # Caturthī (dative)
+    5: 5,            # Pañcamī (ablative)
+    6: 6,            # Ṣaṣṭhī (genitive)
+    7: 7,            # Saptamī (locative)
+    "vocative": 8,   # Sambodhana (vocative)
+}
+
+# Number (vacana) encoding
+VACANA_TO_ID = {
+    "none": 0,       # Non-applicable
+    1: 1,            # Ekavacana (singular)
+    2: 2,            # Dvivacana (dual)
+    3: 3,            # Bahuvacana (plural)
+}
+
+# Person (puruṣa) encoding — Sanskrit convention
+PURUSA_TO_ID = {
+    "none": 0,       # Non-verbs
+    1: 1,            # Prathama-puruṣa (3rd person)
+    2: 2,            # Madhyama-puruṣa (2nd person)
+    3: 3,            # Uttama-puruṣa (1st person)
+}
+```
+
+### FactorizedTokenBatch
+
+**THE CORE DATA STRUCTURE** — Input to Phase 2B Neural Engine.
+
+```python
+class FactorizedTokenBatch(TypedDict):
     """
-    Batched token IDs for neural processing.
+    Factorized token representation for Panini-LM.
+    
+    Instead of a single `token_ids` array, we provide parallel tensors
+    for each morphological dimension. The embedding layer sums these
+    to construct the final word embedding.
+    
+    This enables:
+    1. Zero OOV errors for any valid inflection
+    2. 12× parameter reduction in embeddings
+    3. Structural encoding of morphological knowledge
     """
-    token_ids: "torch.LongTensor"
-    """Shape: (batch_size, seq_len), dtype: torch.long"""
+    root_ids: "torch.LongTensor"
+    """
+    Root/stem IDs — THE SEMANTIC CORE.
+    Shape: (batch_size, seq_len), dtype: torch.long
+    Values: 0-3999 (from ~4000 primitive vocabulary)
+    """
+    
+    type_ids: "torch.LongTensor"
+    """
+    Token type IDs.
+    Shape: (batch_size, seq_len), dtype: torch.long
+    Values: 0=subanta, 1=tiṅanta, 2=avyaya, 3=kṛdanta, 4=taddhita, 5=samāsa, 6=none
+    """
+    
+    vibhakti_ids: "torch.LongTensor"
+    """
+    Case (vibhakti) IDs — for nominals.
+    Shape: (batch_size, seq_len), dtype: torch.long
+    Values: 0=none, 1-7=cases, 8=vocative
+    """
+    
+    vacana_ids: "torch.LongTensor"
+    """
+    Number (vacana) IDs.
+    Shape: (batch_size, seq_len), dtype: torch.long
+    Values: 0=none, 1=singular, 2=dual, 3=plural
+    """
+    
+    purusa_ids: "torch.LongTensor"
+    """
+    Person (puruṣa) IDs — for verbs.
+    Shape: (batch_size, seq_len), dtype: torch.long
+    Values: 0=none, 1=3rd (prathama), 2=2nd (madhyama), 3=1st (uttama)
+    """
     
     attention_mask: "torch.BoolTensor"
     """Shape: (batch_size, seq_len), True for valid positions."""
     
     seq_lengths: List[int]
     """Actual sequence lengths before padding."""
+```
+
+### Example: Encoding "rāmo gṛhaṃ gacchati"
+
+```python
+# After Phase 1 morphological analysis:
+# rāmaḥ  → stem="rāma", type=subanta, vibhakti=1, vacana=1
+# gṛham  → stem="gṛha", type=subanta, vibhakti=2, vacana=1
+# gacchati → stem="gam", type=tiṅanta, puruṣa=1, vacana=1
+
+factorized_batch: FactorizedTokenBatch = {
+    "root_ids": torch.tensor([[2, 1130, 847, 502, 3]]),  # [BOS], rāma, gṛha, gam, [EOS]
+    "type_ids": torch.tensor([[6, 0, 0, 1, 6]]),         # none, subanta, subanta, tiṅanta, none
+    "vibhakti_ids": torch.tensor([[0, 1, 2, 0, 0]]),     # none, nom, acc, none, none
+    "vacana_ids": torch.tensor([[0, 1, 1, 1, 0]]),       # none, sing, sing, sing, none
+    "purusa_ids": torch.tensor([[0, 0, 0, 1, 0]]),       # none, none, none, 3rd, none
+    "attention_mask": torch.tensor([[True, True, True, True, True]]),
+    "seq_lengths": [5],
+}
 ```
 
 ### QKVTensors
@@ -352,7 +467,12 @@ class Phase2BOutput(TypedDict):
     Complete output of Phase 2B Neural Engine.
     """
     embeddings: "torch.Tensor"
-    """Raw embeddings. Shape: (batch_size, seq_len, d_model)"""
+    """
+    Factorized embeddings — sum of morphological components.
+    Shape: (batch_size, seq_len, d_model)
+    
+    E(token) = E(root) + E(type) + E(vibhakti) + E(vacana) + E(puruṣa)
+    """
     
     qkv: QKVTensors
     """Projected Q, K, V tensors."""
