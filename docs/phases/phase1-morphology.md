@@ -225,3 +225,152 @@ See [test-specifications.md](../testing/test-specifications.md) for the full tes
 - [Phase 2A](phase2a-symbolic.md) — Consumes Phase 1 output
 - [Phase 2B](phase2b-neural.md) — Consumes Phase 1 output
 - [Phase 5](phase5-decoding.md) — Uses Phase 1 engine for grammar constraints
+
+---
+
+## Concrete Input/Output Examples
+
+### Example 1: Simple Sentence (Gita 2.47)
+
+**Input (raw Sanskrit):**
+```
+कर्मणि एव ते अधिकारः
+```
+
+**Output (Phase1Output):**
+```python
+{
+    "raw_input": "कर्मणि एव ते अधिकारः",
+    "sandhi_splits": ["कर्मणि", "एव", "ते", "अधिकारः"],
+    "tokens": [
+        {
+            "surface": "कर्मणि",
+            "stem": "कर्मन्",
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 7,      # Locative case
+                "vacana": 1,        # Singular
+                "linga": "n"        # Neuter
+            }
+        },
+        {
+            "surface": "एव",
+            "stem": "एव",
+            "type": "avyaya",       # Indeclinable particle
+            "attributes": {}
+        },
+        {
+            "surface": "ते",
+            "stem": "त्वद्",
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 6,      # Genitive case
+                "vacana": 1,        # Singular
+                "linga": "m"        # Masculine
+            }
+        },
+        {
+            "surface": "अधिकारः",
+            "stem": "अधिकार",
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 1,      # Nominative case
+                "vacana": 1,        # Singular
+                "linga": "m"        # Masculine
+            }
+        }
+    ]
+}
+```
+
+### Example 2: With Sandhi Resolution
+
+**Input:**
+```
+rāmo'pi gṛhaṃ gacchati
+```
+
+**Output:**
+```python
+{
+    "raw_input": "rāmo'pi gṛhaṃ gacchati",
+    "sandhi_splits": ["rāmaḥ", "api", "gṛham", "gacchati"],  # Sandhi resolved
+    "tokens": [
+        {
+            "surface": "rāmaḥ",
+            "stem": "rāma",
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 1,      # Nominative (subject)
+                "vacana": 1,        # Singular
+                "linga": "m",       # Masculine
+                "karaka": "karta"   # Agent role
+            }
+        },
+        {
+            "surface": "api",
+            "stem": "api",
+            "type": "avyaya",
+            "attributes": {}
+        },
+        {
+            "surface": "gṛham",
+            "stem": "gṛha",
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 2,      # Accusative (object)
+                "vacana": 1,
+                "linga": "n",
+                "karaka": "karma"   # Patient role
+            }
+        },
+        {
+            "surface": "gacchati",
+            "stem": "gam",
+            "type": "tinanta",      # Finite verb
+            "attributes": {
+                "lakara": "lat",    # Present tense
+                "purusa": 1,        # Third person
+                "vacana": 1         # Singular
+            }
+        }
+    ]
+}
+```
+
+### Example 3: Compound Word (Samāsa)
+
+**Input:**
+```
+धर्मक्षेत्रे कुरुक्षेत्रे
+```
+
+**Output:**
+```python
+{
+    "raw_input": "धर्मक्षेत्रे कुरुक्षेत्रे",
+    "sandhi_splits": ["धर्मक्षेत्रे", "कुरुक्षेत्रे"],
+    "tokens": [
+        {
+            "surface": "धर्मक्षेत्रे",
+            "stem": "धर्मक्षेत्र",     # Compound: dharma + kṣetra
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 7,          # Locative
+                "vacana": 1,
+                "linga": "n"
+            }
+        },
+        {
+            "surface": "कुरुक्षेत्रे",
+            "stem": "कुरुक्षेत्र",     # Compound: kuru + kṣetra
+            "type": "subanta",
+            "attributes": {
+                "vibhakti": 7,          # Locative
+                "vacana": 1,
+                "linga": "n"
+            }
+        }
+    ]
+}
+```

@@ -223,3 +223,109 @@ def test_batch_consistency():
 - [Phase 1](phase1-morphology.md) — Input source
 - [Phase 3](phase3-attention.md) — Consumes Q, K, V
 - [Glossary](../GLOSSARY.md) — Position-agnostic embeddings definition
+
+---
+
+## Concrete Input/Output Examples
+
+### Example 1: Token Encoding
+
+**Input (MorphTokens from Phase 1):**
+```python
+tokens = [
+    {"surface": "rāmaḥ", "stem": "rāma", "type": "subanta", ...},
+    {"surface": "gṛham", "stem": "gṛha", "type": "subanta", ...},
+    {"surface": "gacchati", "stem": "gam", "type": "tinanta", ...}
+]
+```
+
+**Tokenization Step:**
+```python
+# Tokenizer converts MorphTokens to integer IDs
+token_ids = [2, 156, 892, 47, 3]  # [BOS, rāma, gṛha, gam, EOS]
+type_ids  = [6, 0, 0, 1, 6]       # [unknown, subanta, subanta, tinanta, unknown]
+```
+
+**Output (Phase2BOutput):**
+```python
+{
+    "embeddings": tensor([...]),  # Shape: (1, 5, 512)
+    "qkv": {
+        "Q": tensor([...]),       # Shape: (1, 8, 5, 64)
+        "K": tensor([...]),       # Shape: (1, 8, 5, 64)
+        "V": tensor([...])        # Shape: (1, 8, 5, 64)
+    }
+}
+```
+
+### Example 2: Training Data Format
+
+In the training JSON, token_ids and type_ids are pre-computed:
+
+```json
+{
+    "token_ids": [2, 1130, 17, 7, 234, 89, 3],
+    "type_ids": [6, 0, 1, 2, 0, 0, 6],
+    "seq_len": 7
+}
+```
+
+**Interpretation:**
+| Position | token_id | type_id | Meaning |
+|----------|----------|---------|---------|
+| 0 | 2 | 6 | `[BOS]` (unknown type) |
+| 1 | 1130 | 0 | Noun (subanta) |
+| 2 | 17 | 1 | Verb (tinanta) |
+| 3 | 7 | 2 | Particle (avyaya) |
+| 4 | 234 | 0 | Noun (subanta) |
+| 5 | 89 | 0 | Noun (subanta) |
+| 6 | 3 | 6 | `[EOS]` (unknown type) |
+
+### Example 3: Embedding Computation
+
+```python
+# Given token_ids from training data
+token_ids = torch.tensor([[2, 1130, 17, 7, 234, 89, 3]])  # (batch=1, seq=7)
+type_ids = torch.tensor([[6, 0, 1, 2, 0, 0, 6]])          # (batch=1, seq=7)
+
+# Token embedding: (batch, seq, d_model)
+token_emb = embedding_layer(token_ids)  # (1, 7, 512)
+
+# Type embedding: (batch, seq, d_model)
+type_emb = type_embedding_layer(type_ids)  # (1, 7, 512)
+
+# Combined embedding (sum)
+embeddings = token_emb + type_emb  # (1, 7, 512)
+
+# Q/K/V projection
+Q = q_proj(embeddings).view(1, 7, 8, 64).transpose(1, 2)  # (1, 8, 7, 64)
+K = k_proj(embeddings).view(1, 7, 8, 64).transpose(1, 2)  # (1, 8, 7, 64)
+V = v_proj(embeddings).view(1, 7, 8, 64).transpose(1, 2)  # (1, 8, 7, 64)
+```
+
+### Example 4: Position-Agnostic Property
+
+**Key Insight:** Same token at different positions → identical embedding
+
+```python
+# "रामः गच्छति रामः" (Rāmaḥ appears at positions 0 and 2)
+token_ids = torch.tensor([[156, 47, 156]])  # rāma, gam, rāma
+
+embeddings = model.phase2b(token_ids)["embeddings"]
+
+# Position 0 and position 2 have IDENTICAL embeddings
+assert torch.allclose(embeddings[0, 0], embeddings[0, 2])  # True!
+```
+
+This is fundamentally different from standard transformers where position encoding would make them different.
+
+### Tensor Shape Summary
+
+| Tensor | Shape | Config Values |
+|--------|-------|---------------|
+| `token_ids` | `(batch, seq)` | Variable |
+| `type_ids` | `(batch, seq)` | Variable |
+| `embeddings` | `(batch, seq, d_model)` | d_model=512 |
+| `Q` | `(batch, heads, seq, head_dim)` | heads=8, head_dim=64 |
+| `K` | `(batch, heads, seq, head_dim)` | heads=8, head_dim=64 |
+| `V` | `(batch, heads, seq, head_dim)` | heads=8, head_dim=64 |

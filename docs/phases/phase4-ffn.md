@@ -251,3 +251,160 @@ def test_expansion_comparison(benchmark):
 - [Phase 5](phase5-decoding.md) — Next phase (or output)
 - [Efficiency](../general/Efficiency.md) — Architecture efficiency analysis
 - [Architecture](../general/Architecture.md) — Full pipeline context
+
+---
+
+## Concrete Input/Output Examples
+
+### Example 1: Single FFN Pass
+
+**Input (from Phase 3):**
+```python
+# hidden_states from attention
+# Shape: (batch=1, seq=4, d_model=512)
+x = tensor([
+    [[0.12, -0.45, 0.78, ...],   # Token 0
+     [0.34, 0.56, -0.12, ...],   # Token 1
+     [-0.23, 0.89, 0.01, ...],   # Token 2
+     [0.67, -0.34, 0.45, ...]]   # Token 3
+])
+```
+
+**FFN Processing:**
+```python
+# Step 1: RMSNorm
+normed = rms_norm(x)  # (1, 4, 512)
+
+# Step 2: Gate and Up projections
+# d_ff = 512 * 1.5 = 768
+gate_proj = W_gate @ normed  # (1, 4, 768)
+up_proj = W_up @ normed      # (1, 4, 768)
+
+# Step 3: SwiGLU activation
+gate = silu(gate_proj)       # (1, 4, 768)
+hidden = gate * up_proj      # Element-wise multiply (1, 4, 768)
+
+# Step 4: Down projection
+down = W_down @ hidden       # (1, 4, 512)
+
+# Step 5: Residual connection
+output = x + down            # (1, 4, 512)
+```
+
+**Output:**
+```python
+# Shape: (1, 4, 512) - same as input
+output = tensor([
+    [[0.15, -0.42, 0.81, ...],   # Token 0 (refined)
+     [0.38, 0.52, -0.08, ...],   # Token 1 (refined)
+     [-0.19, 0.93, 0.05, ...],   # Token 2 (refined)
+     [0.71, -0.30, 0.49, ...]]   # Token 3 (refined)
+])
+```
+
+### Example 2: Parameter Count Comparison
+
+**Standard Transformer (4× expansion):**
+```python
+d_model = 512
+d_ff = 512 * 4 = 2048
+
+W_gate: 512 × 2048 = 1,048,576
+W_up:   512 × 2048 = 1,048,576
+W_down: 2048 × 512 = 1,048,576
+Total: 3,145,728 parameters per layer
+```
+
+**Panini-LM (1.5× expansion):**
+```python
+d_model = 512
+d_ff = 512 * 1.5 = 768
+
+W_gate: 512 × 768 = 393,216
+W_up:   512 × 768 = 393,216
+W_down: 768 × 512 = 393,216
+Total: 1,179,648 parameters per layer
+```
+
+**Savings: 62.5% fewer FFN parameters!**
+
+### Example 3: SwiGLU vs GELU Activation
+
+**GELU (standard):**
+```python
+# Single path: x → Linear → GELU → Linear
+hidden = gelu(W_up @ x)  
+output = W_down @ hidden
+```
+
+**SwiGLU:**
+```python
+# Gated path: element-wise gating
+gate = silu(W_gate @ x)      # Learned gate
+hidden = gate * (W_up @ x)   # Gate controls information flow
+output = W_down @ hidden
+```
+
+SwiGLU provides better gradient flow and empirically outperforms GELU.
+
+### Example 4: Full Transformer Block
+
+```python
+class TransformerBlock(nn.Module):
+    """One full Panini transformer layer."""
+    
+    def __init__(self, d_model=512, num_heads=8, expansion=1.5):
+        super().__init__()
+        # Phase 3: Attention
+        self.attention = SparseAttention(d_model, num_heads)
+        self.attn_norm = RMSNorm(d_model)
+        
+        # Phase 4: FFN
+        self.ffn = SwiGLUFFN(d_model, expansion)
+        self.ffn_norm = RMSNorm(d_model)
+    
+    def forward(self, x, adjacency_matrix):
+        # Attention with residual
+        attn_out = self.attention(self.attn_norm(x), adjacency_matrix)
+        x = x + attn_out
+        
+        # FFN with residual (already includes residual in SwiGLUFFN)
+        x = self.ffn(x)  # self.ffn_norm is inside SwiGLUFFN
+        
+        return x  # (batch, seq, d_model)
+
+
+# Example usage
+block = TransformerBlock()
+x = torch.randn(1, 10, 512)          # Input embeddings
+M = torch.zeros(10, 10)              # All-valid adjacency (for example)
+
+output = block(x, M)
+# output.shape: (1, 10, 512)
+```
+
+### Layer Stacking
+
+The full model stacks 6 blocks (default):
+
+```python
+class PaniniModel(nn.Module):
+    def __init__(self, num_layers=6, d_model=512):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            TransformerBlock(d_model) for _ in range(num_layers)
+        ])
+    
+    def forward(self, x, adjacency_matrix):
+        for layer in self.layers:
+            x = layer(x, adjacency_matrix)
+        return x
+```
+
+**Per-layer compute:**
+| Component | FLOPs (seq=100, d=512) |
+|-----------|------------------------|
+| Attention (sparse, k=3) | ~3M |
+| FFN (1.5× expansion) | ~75M |
+| **Total per layer** | ~78M |
+| **6 layers** | ~470M |

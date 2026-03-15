@@ -308,3 +308,174 @@ assert adj.matrix[0, 0] == 0.0
 # Average connections per token (target: 2-5)
 assert 1.0 <= adj.meta["avg_connections_per_token"] <= 5.0
 ```
+
+---
+
+## Concrete Input/Output Examples
+
+### Example 1: Subject-Verb Agreement
+
+**Input (List[MorphToken] from Phase 1):**
+```python
+tokens = [
+    {"surface": "rāmaḥ", "stem": "rāma", "type": "subanta",
+     "attributes": {"vibhakti": 1, "vacana": 1, "linga": "m"}},
+    {"surface": "gacchati", "stem": "gam", "type": "tinanta",
+     "attributes": {"lakara": "lat", "purusa": 1, "vacana": 1}}
+]
+```
+
+**Output (AdjacencyMatrix):**
+```python
+{
+    "matrix": tensor([
+        [0.0,  0.0],   # rāmaḥ can attend to: self, gacchati
+        [0.0,  0.0]    # gacchati can attend to: rāmaḥ, self
+    ]),
+    "meta": {
+        "seq_len": 2,
+        "num_valid_edges": 4,
+        "sparsity_ratio": 1.0,    # 4/4 = 100% (small sentence)
+        "avg_connections_per_token": 2.0
+    },
+    "links": [
+        {"source_idx": 0, "target_idx": 0, "link_type": "sva-sambandha", "rule_applied": "self"},
+        {"source_idx": 0, "target_idx": 1, "link_type": "kartā-kriyā", "rule_applied": "subject-verb"},
+        {"source_idx": 1, "target_idx": 0, "link_type": "kartā-kriyā", "rule_applied": "subject-verb"},
+        {"source_idx": 1, "target_idx": 1, "link_type": "sva-sambandha", "rule_applied": "self"}
+    ]
+}
+```
+
+### Example 2: Subject-Object-Verb
+
+**Input:**
+```python
+tokens = [
+    {"surface": "rāmaḥ", "stem": "rāma", "type": "subanta",
+     "attributes": {"vibhakti": 1, "vacana": 1}},      # Nominative (subject)
+    {"surface": "gṛham", "stem": "gṛha", "type": "subanta",
+     "attributes": {"vibhakti": 2, "vacana": 1}},      # Accusative (object)
+    {"surface": "gacchati", "stem": "gam", "type": "tinanta",
+     "attributes": {"vacana": 1}}
+]
+```
+
+**Output:**
+```python
+{
+    "matrix": tensor([
+        [0.0,  -inf, 0.0],   # rāmaḥ → self, verb (NOT object)
+        [-inf, 0.0,  0.0],   # gṛham → self, verb (NOT subject)
+        [0.0,  0.0,  0.0]    # gacchati → subject, object, self
+    ]),
+    "meta": {
+        "seq_len": 3,
+        "num_valid_edges": 7,
+        "sparsity_ratio": 0.78,   # 7/9
+        "avg_connections_per_token": 2.33
+    },
+    "links": [
+        {"source_idx": 0, "target_idx": 0, "link_type": "sva-sambandha", "rule_applied": "self"},
+        {"source_idx": 0, "target_idx": 2, "link_type": "kartā-kriyā", "rule_applied": "subject-verb"},
+        {"source_idx": 1, "target_idx": 1, "link_type": "sva-sambandha", "rule_applied": "self"},
+        {"source_idx": 1, "target_idx": 2, "link_type": "karma-kriyā", "rule_applied": "object-verb"},
+        {"source_idx": 2, "target_idx": 0, "link_type": "kartā-kriyā", "rule_applied": "subject-verb"},
+        {"source_idx": 2, "target_idx": 1, "link_type": "karma-kriyā", "rule_applied": "object-verb"},
+        {"source_idx": 2, "target_idx": 2, "link_type": "sva-sambandha", "rule_applied": "self"}
+    ]
+}
+```
+
+**Matrix Visualization:**
+```
+         rāmaḥ  gṛham  gacchati
+rāmaḥ      ✓      ✗       ✓
+gṛham      ✗      ✓       ✓
+gacchati   ✓      ✓       ✓
+```
+
+### Example 3: Number Disagreement (Blocked Link)
+
+**Input (singular subject, plural verb — invalid in Sanskrit):**
+```python
+tokens = [
+    {"surface": "rāmaḥ", "stem": "rāma", "type": "subanta",
+     "attributes": {"vibhakti": 1, "vacana": 1}},      # Singular
+    {"surface": "gacchanti", "stem": "gam", "type": "tinanta",
+     "attributes": {"vacana": 3}}                       # Plural
+]
+```
+
+**Output:**
+```python
+{
+    "matrix": tensor([
+        [0.0,  -inf],   # rāmaḥ can ONLY attend to self (number mismatch!)
+        [-inf, 0.0]     # gacchanti can ONLY attend to self
+    ]),
+    "meta": {
+        "seq_len": 2,
+        "num_valid_edges": 2,
+        "sparsity_ratio": 0.5,    # Only self-attention
+        "avg_connections_per_token": 1.0
+    },
+    "links": [
+        {"source_idx": 0, "target_idx": 0, "link_type": "sva-sambandha", "rule_applied": "self"},
+        {"source_idx": 1, "target_idx": 1, "link_type": "sva-sambandha", "rule_applied": "self"}
+    ]
+}
+```
+
+### Example 4: Longer Sentence (Gita 1.1)
+
+**Input:**
+```python
+# "धृतराष्ट्रः उवाच — हे सञ्जय"
+tokens = [
+    {"surface": "धृतराष्ट्रः", "type": "subanta", "attributes": {"vibhakti": 1, "vacana": 1}},
+    {"surface": "उवाच", "type": "tinanta", "attributes": {"vacana": 1}},
+    {"surface": "—", "type": "avyaya", "attributes": {}},
+    {"surface": "हे", "type": "avyaya", "attributes": {}},
+    {"surface": "सञ्जय", "type": "subanta", "attributes": {"vibhakti": 8, "vacana": 1}}  # Vocative
+]
+```
+
+**Output:**
+```python
+{
+    "meta": {
+        "seq_len": 5,
+        "num_valid_edges": 13,
+        "sparsity_ratio": 0.52,   # 13/25
+        "avg_connections_per_token": 2.6
+    }
+}
+```
+
+**Matrix Visualization:**
+```
+              धृतराष्ट्रः  उवाच   —    हे   सञ्जय
+धृतराष्ट्रः      ✓         ✓     ✗     ✗     ✗
+उवाच            ✓         ✓     ✗     ✗     ✗
+—               ✓         ✓     ✓     ✓     ✓      (avyaya connects broadly)
+हे              ✗         ✗     ✓     ✓     ✓      (vocative particle → vocative noun)
+सञ्जय           ✗         ✗     ✓     ✓     ✓
+```
+
+### Training Data Format (Sparse Edges)
+
+In the training dataset, edges are stored as sparse lists (not dense matrices):
+
+```json
+{
+    "adjacency_edges": [
+        {"src": 0, "tgt": 0, "link_type": "sva-sambandha"},
+        {"src": 0, "tgt": 1, "link_type": "kartā-kriyā"},
+        {"src": 1, "tgt": 0, "link_type": "kartā-kriyā"},
+        {"src": 1, "tgt": 1, "link_type": "sva-sambandha"}
+    ]
+}
+```
+
+At training time, these edges are converted to the dense matrix M for attention.

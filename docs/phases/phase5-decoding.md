@@ -359,3 +359,183 @@ def test_grammaticality_guarantee():
 - [Phase 4](phase4-ffn.md) — Input source
 - [Glossary](../GLOSSARY.md) — Kāraka, Vibhakti, Vacana definitions
 - [Decoding](../Decoding.md) — Original decoding documentation
+
+---
+
+## Concrete Input/Output Examples
+
+### Example 1: Constrained Decoding Step
+
+**Context:** Generating after "rāmaḥ" (singular masculine nominative)
+
+**Input:**
+```python
+# Hidden state from Phase 4
+hidden = tensor([0.12, -0.45, ...])  # (d_model=512,)
+
+# Current morphological state
+state = MorphologicalState(
+    open_relations=["karta-pending"],  # Subject needs verb
+    vacana_ctx=1,                       # Singular context
+    expected_vibhakti=None,
+    in_compound=False
+)
+
+# Vocabulary (simplified)
+vocab = {
+    0: {"stem": "gam", "type": "tinanta", "vacana": 1},   # gacchati (sg)
+    1: {"stem": "gam", "type": "tinanta", "vacana": 3},   # gacchanti (pl)
+    2: {"stem": "rāma", "type": "subanta", "vacana": 1},  # rāmaḥ
+    3: {"stem": "[EOS]", "type": "special"},
+    ...
+}
+```
+
+**Grammar Mask Computation:**
+```python
+mask = torch.full((vocab_size,), float('-inf'))
+
+# Token 0 (gacchati): Verb, singular - LEGAL
+# - Type is tinanta ✓
+# - Vacana matches context (1 == 1) ✓
+# - Can close "karta-pending" relation ✓
+mask[0] = 0.0
+
+# Token 1 (gacchanti): Verb, plural - ILLEGAL
+# - Type is tinanta ✓
+# - Vacana mismatch (3 != 1) ✗
+mask[1] = float('-inf')  # Stays -inf
+
+# Token 2 (rāmaḥ): Noun - LEGAL (could add another subject)
+mask[2] = 0.0
+
+# Token 3 ([EOS]): End - ILLEGAL (open relation pending)
+# - state.open_relations is not empty ✗
+mask[3] = float('-inf')
+```
+
+**Logits + Mask:**
+```python
+raw_logits = tensor([2.1, 2.8, 1.5, 0.9, ...])  # From lm_head(hidden)
+
+# After masking:
+masked_logits = tensor([2.1, -inf, 1.5, -inf, ...])
+
+# Softmax:
+probs = softmax(masked_logits)  # [0.62, 0.00, 0.38, 0.00, ...]
+                                 #  ↑ gacchati  ↑ rāmaḥ  ↑ blocked
+```
+
+**Output:**
+```python
+# Sample from legal distribution
+selected_token_id = 0  # gacchati (62% probability won)
+
+# New state after generating verb
+new_state = MorphologicalState(
+    open_relations=[],      # Verb consumed the "karta-pending"
+    vacana_ctx=1,           # Still singular
+    expected_vibhakti=None,
+    in_compound=False
+)
+```
+
+### Example 2: Full Generation Trace
+
+**Prompt:** `""`(empty - generate from scratch)
+
+**Step-by-step:**
+
+| Step | Generated | State | Legal Tokens | Blocked Reason |
+|------|-----------|-------|--------------|----------------|
+| 1 | `rāmaḥ` | `vacana=1, open=[karta-pending]` | Nouns, verbs | - |
+| 2 | `gṛham` | `vacana=1, open=[karta-pending]` | Nouns (acc), verbs | Plural verbs (vacana mismatch) |
+| 3 | `gacchati` | `vacana=1, open=[]` | Nouns, verbs, EOS | - |
+| 4 | `[EOS]` | - | - | - |
+
+**Generated:** `"rāmaḥ gṛham gacchati"` (Rāma goes home)
+
+**Guarantee:** This is 100% grammatically valid Sanskrit.
+
+### Example 3: Compound Word Handling
+
+**Context:** Mid-compound generation
+
+**State at step N:**
+```python
+state = MorphologicalState(
+    in_compound=True,
+    compound_members=["dharma"],  # Already have "dharma-"
+    expected_vibhakti=[1, 2, 7]   # Final compound token must be case-inflected
+)
+```
+
+**Legal tokens:**
+- `kṣetra` (can continue compound → "dharmakṣetra")
+- `kṣetrāt` (ends compound with ablative case)
+
+**Blocked:**
+- `gacchati` (verb cannot end compound)
+- `ca` (particle cannot end compound)
+- `[EOS]` (compound not complete)
+
+### Example 4: Inference Pipeline
+
+```python
+def generate(text: str, max_tokens: int = 50) -> str:
+    """Complete inference pipeline."""
+    
+    # Phase 1: Analyze input (LIVE)
+    tokens = ingest_morphology(text)
+    
+    # Phase 2A: Build adjacency (LIVE)  
+    adjacency = build_adjacency_matrix(tokens)
+    
+    # Encode input
+    token_ids = tokenizer.encode(tokens)
+    
+    # Initialize decoding state from input morphology
+    state = MorphologicalState()
+    for t in tokens:
+        state = update_state(state, t)
+    
+    generated_ids = list(token_ids)
+    
+    for _ in range(max_tokens):
+        # Phase 2B-4: Forward pass
+        hidden = model_forward(generated_ids, adjacency)
+        
+        # Phase 5: Constrained decoding
+        logits = lm_head(hidden[-1])
+        grammar_mask = compute_grammar_mask(state, vocab)
+        
+        next_id = sample(logits + grammar_mask)
+        
+        if next_id == EOS_ID:
+            break
+            
+        generated_ids.append(next_id)
+        state = update_state(state, vocab[next_id])
+        
+        # Extend adjacency for new token
+        adjacency = extend_adjacency(adjacency, vocab[next_id], state)
+    
+    return tokenizer.decode(generated_ids)
+
+# Usage
+output = generate("धृतराष्ट्रः उवाच")
+# Possible output: "धृतराष्ट्रः उवाच — हे सञ्जय धर्मक्षेत्रे किम् अकुर्वन्"
+```
+
+### Training vs Inference Summary
+
+| Aspect | Training | Inference |
+|--------|----------|-----------|
+| Phase 1 | Pre-computed (in JSON) | Run live |
+| Phase 2A | Pre-computed (`adjacency_edges`) | Run live |
+| Phase 2B | Forward pass | Forward pass |
+| Phase 3 | Forward pass | Forward pass |
+| Phase 4 | Forward pass | Forward pass |
+| Phase 5 | Teacher forcing (target_ids) | Autoregressive + grammar mask |
+
+**Key difference:** At inference, the grammar mask dynamically constrains each generation step based on the morphological state, guaranteeing 100% grammatical output.

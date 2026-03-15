@@ -1,6 +1,6 @@
 # Panini-LM: Neuro-Symbolic Language Modeling via Pāṇinian Algebraic Priors
 
-> **Quick navigation**: [INDEX](INDEX.md) — [GLOSSARY](GLOSSARY.md) — [Data Types](types/data-contracts.md) — [Tests](testing/test-specifications.md)
+> **Quick navigation**: [INDEX](INDEX.md) — [GLOSSARY](GLOSSARY.md) — [Data Types](types/data-contracts.md) — [Training](training/README.md) — [Tests](testing/test-specifications.md)
 
 ---
 
@@ -26,6 +26,32 @@ This repository documents the Pāṇinian Neuro-Symbolic architecture for Sanskr
 - [sanskrit-heritage](integration/sanskrit-heritage.md) — Fallback implementation
 - [Triton Kernels](integration/triton.md) — GPU sparse attention
 - [samsadhani](integration/samsadhani.md) — Kāraka analysis API
+
+### Training
+
+- [Training Guide](training/README.md) — Dataset structure, training process, model size
+
+---
+
+## Model Size
+
+Panini-LM is designed to be parameter-efficient by offloading syntax to symbolic rules:
+
+| Config | Parameters | Notes |
+|--------|------------|-------|
+| **Small** | ~15M | d_model=256, 4 layers |
+| **Default** | ~39M | d_model=512, 6 layers |
+| **Base** | ~85M | d_model=768, 8 layers |
+| **Large** | ~180M | d_model=1024, 12 layers |
+
+**Why smaller than GPT/BERT?**
+- No positional encoding (Sanskrit has free word order)
+- Reduced FFN expansion (1.5× vs 4×) — syntax handled by Phase 2A
+- Domain-specific vocabulary (Sanskrit only)
+
+---
+
+## Architecture Summary
 
 Current Large Language Models (LLMs) rely on dense parameter networks and autoregressive attention mechanisms to statistically approximate syntactic structures. For morphologically rich, free-word-order languages like Sanskrit, this results in extreme computational inefficiencies, high "token taxes," and arbitrary positional dependencies.
 

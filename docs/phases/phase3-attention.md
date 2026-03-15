@@ -257,3 +257,163 @@ def test_sparse_speedup(benchmark):
 - [Phase 2A](phase2a-symbolic.md) — Source of Matrix M
 - [Phase 2B](phase2b-neural.md) — Source of Q, K, V
 - [Phase 4](phase4-ffn.md) — Consumes attention output
+
+---
+
+## Concrete Input/Output Examples
+
+### Example 1: Combining Phase 2A and 2B Outputs
+
+**From Phase 2A (Adjacency Matrix):**
+```python
+# "rāmaḥ gṛham gacchati" - Subject, Object, Verb
+M = tensor([
+    [0.0,  -inf, 0.0],   # rāmaḥ → self, verb
+    [-inf, 0.0,  0.0],   # gṛham → self, verb
+    [0.0,  0.0,  0.0]    # gacchati → all (verb sees all arguments)
+])
+```
+
+**From Phase 2B (Q, K, V):**
+```python
+# Shape: (batch=1, heads=8, seq=3, head_dim=64)
+Q = tensor([...])  # (1, 8, 3, 64)
+K = tensor([...])  # (1, 8, 3, 64)
+V = tensor([...])  # (1, 8, 3, 64)
+```
+
+**Attention Computation:**
+```python
+# Step 1: Compute raw attention scores
+# scores = Q @ K^T / sqrt(d_k)
+scores = torch.matmul(Q, K.transpose(-2, -1)) / 8.0  # (1, 8, 3, 3)
+
+# Example raw scores (one head):
+raw_scores = tensor([
+    [1.2,  0.3,  0.8],   # rāmaḥ's scores to all
+    [0.5,  1.1,  0.9],   # gṛham's scores to all
+    [0.7,  0.6,  1.0]    # gacchati's scores to all
+])
+
+# Step 2: Add mask M
+# scores + M = tensor([
+#     [1.2,  -inf, 0.8],   # rāmaḥ: can see self, verb (not object)
+#     [-inf, 1.1,  0.9],   # gṛham: can see self, verb (not subject)
+#     [0.7,  0.6,  1.0]    # gacchati: can see all
+# ])
+
+masked_scores = scores + M.unsqueeze(0).unsqueeze(0)
+
+# Step 3: Softmax (over last dim)
+# -inf becomes 0 probability
+weights = softmax(masked_scores, dim=-1)
+
+# Result weights (one head):
+# tensor([
+#     [0.60, 0.00, 0.40],   # rāmaḥ: 60% self, 0% object, 40% verb
+#     [0.00, 0.55, 0.45],   # gṛham: 0% subject, 55% self, 45% verb
+#     [0.32, 0.28, 0.40]    # gacchati: distributed across all
+# ])
+
+# Step 4: Weighted sum of values
+output = torch.matmul(weights, V)  # (1, 8, 3, 64)
+```
+
+**Output (AttentionOutput):**
+```python
+{
+    "hidden_states": tensor([...]),  # Shape: (1, 3, 512)
+    "attention_weights": None        # Optional, for debugging only
+}
+```
+
+### Example 2: Effect of Masking
+
+**Without mask (standard attention):**
+```
+rāmaḥ attends to: rāmaḥ(33%), gṛham(33%), gacchati(34%)
+```
+
+**With Pāṇinian mask:**
+```
+rāmaḥ attends to: rāmaḥ(60%), gṛham(0%), gacchati(40%)
+                           ↑ masked out (no direct noun-noun relation)
+```
+
+The mask eliminates grammatically invalid attention paths.
+
+### Example 3: Full Pipeline with Numeric Values
+
+```python
+import torch
+
+# Config
+batch, heads, seq, head_dim = 1, 2, 3, 4  # Small example
+d_model = heads * head_dim  # 8
+
+# Phase 2B outputs (toy values)
+Q = torch.tensor([[
+    [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]],  # Head 0
+    [[0, 0, 0, 1], [1, 1, 0, 0], [0, 1, 1, 0]]   # Head 1
+]], dtype=torch.float32)  # (1, 2, 3, 4)
+
+K = Q.clone()  # Same as Q for simplicity
+V = torch.ones(1, 2, 3, 4)  # All ones
+
+# Phase 2A output: Subject(0) → Verb(2), Object(1) → Verb(2)
+M = torch.tensor([
+    [0.0,  float('-inf'), 0.0],
+    [float('-inf'), 0.0,  0.0],
+    [0.0,  0.0,  0.0]
+])
+
+# Sparse attention
+hidden = sparse_paninian_attention(Q, K, V, M)
+
+# Output shape: (1, 3, 8)
+assert hidden.shape == (1, 3, d_model)
+```
+
+### Example 4: Sparsity Impact on Compute
+
+**Dense attention (no mask):**
+```
+For seq_len=100:
+- Attention matrix: 100 × 100 = 10,000 score computations
+- Each requires: Q[i] · K[j] = d_k multiplications
+```
+
+**Sparse Pāṇinian attention (k=3 average connections):**
+```
+For seq_len=100, k=3:
+- Valid attention pairs: 100 × 3 = 300 score computations
+- 97% FLOPs saved!
+```
+
+### Training Data → Attention Mask
+
+The training data stores edges sparsely:
+
+```json
+{
+    "adjacency_edges": [
+        {"src": 0, "tgt": 0, "link_type": "sva-sambandha"},
+        {"src": 0, "tgt": 2, "link_type": "kartā-kriyā"},
+        {"src": 1, "tgt": 1, "link_type": "sva-sambandha"},
+        {"src": 1, "tgt": 2, "link_type": "karma-kriyā"},
+        {"src": 2, "tgt": 0, "link_type": "kartā-kriyā"},
+        {"src": 2, "tgt": 1, "link_type": "karma-kriyā"},
+        {"src": 2, "tgt": 2, "link_type": "sva-sambandha"}
+    ],
+    "seq_len": 3
+}
+```
+
+**Conversion to dense matrix (in DataLoader):**
+```python
+def edges_to_matrix(edges: List[dict], seq_len: int) -> torch.Tensor:
+    M = torch.full((seq_len, seq_len), float('-inf'))
+    for edge in edges:
+        M[edge["src"], edge["tgt"]] = 0.0
+    return M
+```

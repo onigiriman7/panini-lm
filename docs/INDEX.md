@@ -121,6 +121,25 @@ Formal data contract definitions using Python TypedDict.
 
 ---
 
+## Training
+
+Model training documentation and dataset specifications.
+
+- [Training Guide](training/README.md) — Complete training documentation
+  - **Model Size**: Parameter counts for Small (~15M), Default (~39M), Base (~85M), Large (~180M)
+  - **Dataset Structure**: JSON format with token_ids, type_ids, target_ids, adjacency_edges
+  - **Training Process**: Loss functions, optimizer config, DataLoader setup
+  - **Data Preparation**: Using TrainingDataBuilder to process Sanskrit text
+
+### Dataset Files
+
+| File | Samples | Purpose |
+|------|---------|---------|
+| `tests/data/gita_training.json` | 1,242 | Full training dataset |
+| `tests/data/gita_samples.json` | 10 | Quick testing subset |
+
+---
+
 ## Testing
 
 Test specifications for each phase and integration tests.
