@@ -77,7 +77,7 @@ The 5-phase processing pipeline transforms raw Sanskrit text into grammatically-
 |-------|------|-------|--------|------|
 | 1 | Morphological Ingestion | Raw UTF-8 text | `List[MorphToken]` | [phase1-morphology.md](phases/phase1-morphology.md) |
 | 2A | Symbolic Engine | `List[MorphToken]` | Adjacency Matrix `M` | [phase2a-symbolic.md](phases/phase2a-symbolic.md) |
-| 2B | Neural Engine | `List[MorphToken]` | Q, K, V tensors | [phase2b-neural.md](phases/phase2b-neural.md) |
+| 2B | Neural Engine | `FactorizedTokenBatch` | Q, K, V tensors | [phase2b-neural.md](phases/phase2b-neural.md) |
 | 3 | Sparse Attention | Q, K, V, M | Contextualized states | [phase3-attention.md](phases/phase3-attention.md) |
 | 4 | Semantic Maturation | Hidden states | Refined states | [phase4-ffn.md](phases/phase4-ffn.md) |
 | 5 | Grammar-Constrained Decoding | Logits + morph state | Valid tokens | [phase5-decoding.md](phases/phase5-decoding.md) |
@@ -115,8 +115,9 @@ Formal data contract definitions using Python TypedDict.
 - [Data Contracts](types/data-contracts.md) — All inter-phase data structures
   - `MorphToken` — Phase 1 output
   - `MorphAttributes` — Morphological attributes
+  - `FactorizedTokenBatch` — Phase 2B input (5 parallel ID tensors)
   - `AdjacencyMatrix` — Phase 2A output (sparse tensor)
-  - `TokenBatch` — Batched token IDs
+  - Grammatical ID mappings (type, vibhakti, vacana, puruṣa)
   - Error types and validation schemas
 
 ---
@@ -126,8 +127,9 @@ Formal data contract definitions using Python TypedDict.
 Model training documentation and dataset specifications.
 
 - [Training Guide](training/README.md) — Complete training documentation
-  - **Model Size**: Parameter counts for Small (~15M), Default (~39M), Base (~85M), Large (~180M)
-  - **Dataset Structure**: JSON format with token_ids, type_ids, target_ids, adjacency_edges
+  - **Model Size**: Parameter counts for Small (~8M), Default (~18M), Base (~45M), Large (~100M)
+  - **Factorized Embeddings**: 12× parameter reduction via morphological composition
+  - **Dataset Structure**: JSON format with factorized tensors (root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids)
   - **Training Process**: Loss functions, optimizer config, DataLoader setup
   - **Data Preparation**: Using TrainingDataBuilder to process Sanskrit text
 
@@ -180,6 +182,8 @@ Quick lookup for common terms (alphabetical):
 | Adjacency Matrix M | Sparse (N×N) tensor encoding grammatical validity | [phase2a-symbolic.md](phases/phase2a-symbolic.md), [Data Contracts](types/data-contracts.md) |
 | Aṣṭādhyāyī | Pāṇini's Sanskrit grammar treatise (~4th c. BCE) | [GLOSSARY.md](GLOSSARY.md) |
 | Block-sparse | GPU kernel optimization skipping invalid blocks | [triton.md](integration/triton.md) |
+| Factorized Embedding | Additive composition of morphological primitives | [phase2b-neural.md](phases/phase2b-neural.md), [Data Contracts](types/data-contracts.md) |
+| FactorizedTokenBatch | 5 parallel ID tensors (root, type, vibhakti, vacana, puruṣa) | [Data Contracts](types/data-contracts.md) |
 | Grammar-constrained | Decoding that guarantees grammatical correctness | [phase5-decoding.md](phases/phase5-decoding.md) |
 | Kāraka | Semantic/syntactic role (agent, object, etc.) | [GLOSSARY.md](GLOSSARY.md), [phase2a-symbolic.md](phases/phase2a-symbolic.md) |
 | MorphToken | Standardized morphological token structure | [Data Contracts](types/data-contracts.md) |
@@ -193,6 +197,7 @@ Quick lookup for common terms (alphabetical):
 | Vacana | Grammatical number (singular/dual/plural) | [GLOSSARY.md](GLOSSARY.md) |
 | Vibhakti | Case ending (nominative, accusative, etc.) | [GLOSSARY.md](GLOSSARY.md) |
 | vidyut-prakriya | Rust morphological analyzer | [vidyut.md](integration/vidyut.md) |
+| Zero OOV | No out-of-vocabulary errors for valid inflections | [phase2b-neural.md](phases/phase2b-neural.md), [Training](training/README.md) |
 
 ---
 

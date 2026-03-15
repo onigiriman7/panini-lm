@@ -306,6 +306,47 @@ The tracks merge in Phase 3 (Sparse Attention).
 
 ---
 
+### Factorized Embeddings
+
+**THE KEY INNOVATION** — Word embeddings constructed by summing morphological component vectors instead of direct lookup:
+
+```python
+E(word) = E(root) + E(type) + E(vibhakti) + E(vacana) + E(puruṣa)
+```
+
+**Benefits**:
+- **Zero OOV**: Any valid inflection can be embedded compositionally
+- **12× parameter reduction**: ~2M vs ~25M embedding parameters
+- **Structural encoding**: Morphological knowledge preserved, not learned implicitly
+
+**Example**:
+```
+E(gacchati) = E(√gam) + E(tiṅanta) + E(laṭ) + E(prathama) + E(eka-vacana)
+E(gacchāmi) = E(√gam) + E(tiṅanta) + E(laṭ) + E(uttama)   + E(eka-vacana)
+```
+
+Both share the same root embedding E(√gam) — only the grammatical components differ.
+
+**Related**: [Phase 2B — Neural Engine](phases/phase2b-neural.md), [Data Contracts](types/data-contracts.md)
+
+---
+
+### FactorizedTokenBatch
+
+The input data structure to Phase 2B, containing 5 parallel ID tensors:
+
+| Tensor | Description | Size |
+|--------|-------------|------|
+| `root_ids` | Root/stem IDs (semantic core) | ~4000 |
+| `type_ids` | Token type (subanta/tiṅanta/etc.) | 7 |
+| `vibhakti_ids` | Case (1-7, vocative, none) | 9 |
+| `vacana_ids` | Number (sing/dual/plural/none) | 4 |
+| `purusa_ids` | Person (3rd/2nd/1st/none) | 4 |
+
+**Related**: [Data Contracts](types/data-contracts.md)
+
+---
+
 ### Grammar-Constrained Decoding
 
 Inference-time technique that masks grammatically impossible next tokens, guaranteeing 100% grammatical correctness.
@@ -333,6 +374,18 @@ Attention mechanism with O(N·k) complexity instead of O(N²), achieved by compu
 **Formula**: `Attention(Q,K,V) = softmax(Sparse(QK^T/√d_k) + M) × V`
 
 **Related**: [Phase 3 — Sparse Attention](phases/phase3-attention.md)
+
+---
+
+### Zero OOV
+
+"Zero Out-Of-Vocabulary" — the property that Panini-LM can embed ANY valid Sanskrit inflection, even forms never seen during training.
+
+Achieved through **Factorized Embeddings**: as long as the model knows the root (√gam) and the grammatical tags, it can construct the embedding for any inflected form.
+
+**Contrast with standard LLMs**: Unknown words map to a single `[UNK]` token, losing all semantic/grammatical information.
+
+**Related**: [Phase 2B — Neural Engine](phases/phase2b-neural.md), [Training Guide](training/README.md)
 
 ---
 

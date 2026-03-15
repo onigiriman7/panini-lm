@@ -692,7 +692,7 @@ class ModelConfig(TypedDict):
     """Number of transformer layers. Default: 6"""
     
     vocab_size: int
-    """Vocabulary size. Typically ~50,000 for Sanskrit."""
+    """Vocabulary size. ~4,000 morphological primitives (factorized embeddings)."""
     
     # FFN
     ffn_expansion: float

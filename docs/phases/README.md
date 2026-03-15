@@ -27,9 +27,10 @@
 │   │  PHASE 2A           │   │  PHASE 2B           │            │
 │   │  Symbolic Engine    │   │  Neural Engine      │            │
 │   │  ────────────────   │   │  ────────────────   │            │
-│   │  • Kāraka mapping   │   │  • Tokenization     │            │
-│   │  • Rule evaluation  │   │  • Embedding        │            │
-│   │  • Matrix M (N×N)   │   │  • Q, K, V proj     │            │
+│   │  • Kāraka mapping   │   │  • FACTORIZED       │            │
+│   │  • Rule evaluation  │   │    EMBEDDING        │            │
+│   │  • Matrix M (N×N)   │   │  • E = Σ components │            │
+│   │                     │   │  • Q, K, V proj     │            │
 │   │                     │   │  • NO positional    │            │
 │   └──────────┬──────────┘   └──────────┬──────────┘            │
 │              │                         │                        │
@@ -70,7 +71,7 @@
 |-------|------|-------|--------|----------------|
 | **1** | [Morphological Ingestion](phase1-morphology.md) | Raw UTF-8 text | `List[MorphToken]` | FST-based Sandhi/Samāsa resolution |
 | **2A** | [Symbolic Engine](phase2a-symbolic.md) | `List[MorphToken]` | Matrix M `(N×N)` | Deterministic grammatical routing |
-| **2B** | [Neural Engine](phase2b-neural.md) | `List[MorphToken]` | Q, K, V tensors | Position-agnostic embeddings |
+| **2B** | [Neural Engine](phase2b-neural.md) | `FactorizedTokenBatch` | Q, K, V tensors | Factorized embeddings (~4000 vocab) |
 | **3** | [Sparse Attention](phase3-attention.md) | Q, K, V, M | Hidden states | O(N·k) hardware-optimized routing |
 | **4** | [Semantic Maturation](phase4-ffn.md) | Hidden states | Refined states | Compact FFN (1.5-2x expansion) |
 | **5** | [Grammar Decoding](phase5-decoding.md) | Logits + state | Valid tokens | 100% grammatical correctness |

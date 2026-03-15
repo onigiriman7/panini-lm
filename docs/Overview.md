@@ -35,19 +35,23 @@ This repository documents the Pāṇinian Neuro-Symbolic architecture for Sanskr
 
 ## Model Size
 
-Panini-LM is designed to be parameter-efficient by offloading syntax to symbolic rules:
+Panini-LM achieves radical parameter reduction through **Factorized Embeddings**:
 
-| Config | Parameters | Notes |
-|--------|------------|-------|
-| **Small** | ~15M | d_model=256, 4 layers |
-| **Default** | ~39M | d_model=512, 6 layers |
-| **Base** | ~85M | d_model=768, 8 layers |
-| **Large** | ~180M | d_model=1024, 12 layers |
+| Config | Parameters | Vocabulary | Notes |
+|--------|------------|------------|-------|
+| **Small** | ~8M | ~4,000 | d_model=256, 4 layers |
+| **Default** | ~18M | ~4,000 | d_model=512, 6 layers |
+| **Base** | ~45M | ~4,000 | d_model=768, 8 layers |
+| **Large** | ~100M | ~4,000 | d_model=1024, 12 layers |
 
-**Why smaller than GPT/BERT?**
-- No positional encoding (Sanskrit has free word order)
-- Reduced FFN expansion (1.5× vs 4×) — syntax handled by Phase 2A
-- Domain-specific vocabulary (Sanskrit only)
+### Why so much smaller than GPT/BERT?
+
+1. **Factorized Embeddings**: 12× fewer embedding parameters
+   - Standard: 50,000 × 512 = **25.6M** params
+   - Panini-LM: ~4,000 × 512 + grammatical matrices = **~2.1M** params
+2. **Zero OOV**: Any valid inflection can be embedded compositionally
+3. **No positional encoding**: Sanskrit has free word order
+4. **Reduced FFN expansion**: 1.5× vs 4× — syntax handled by Phase 2A
 
 ---
 
