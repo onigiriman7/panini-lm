@@ -80,14 +80,12 @@ Training data uses **factorized tensor representation** instead of flat `token_i
 ```json
 {
   "metadata": {
-    "source": "gita.txt",
-    "created_at": "2026-03-15T10:30:00",
+    "source": "data/gita.txt",
+    "created_at": "2026-03-15T09:56:22.956787",
     "panini_lm_version": "0.1.0",
-    "vocab_size": 4000,
-    "num_types": 7,
-    "num_vibhakti": 9,
-    "num_vacana": 4,
-    "num_purusa": 4
+    "description": "Bhagavad Gita training data for Panini-LM (factorized tensors)",
+    "factorized_embeddings": true,
+    "num_chapters": 7
   },
   
   "vocab": {
@@ -96,12 +94,11 @@ Training data uses **factorized tensor representation** instead of flat `token_i
     "[BOS]": 2,
     "[EOS]": 3,
     "[MASK]": 4,
-    "रम्": 5,
-    "गम्": 6,
-    "भू": 7,
+    "हे": 5,
+    "सञ्जय": 6,
+    "धर्मक्षेत्र": 7,
     "राम": 100,
-    "गृह": 101,
-    ...
+    "गम्": 101
   },
   
   "type_vocab": {
@@ -114,45 +111,59 @@ Training data uses **factorized tensor representation** instead of flat `token_i
     "none": 6
   },
   
+  "vibhakti_vocab": {
+    "none": 0,
+    "prathamā": 1,
+    "dvitīyā": 2,
+    "tṛtīyā": 3,
+    "caturthī": 4,
+    "pañcamī": 5,
+    "ṣaṣṭhī": 6,
+    "saptamī": 7,
+    "sambodhana": 8
+  },
+  
   "samples": [
     {
-      "id": "ch01_s0001",
+      "id": "ch01_s0000",
       "chapter": 1,
-      "raw_text": "रामो गृहं गच्छति",
+      "raw_text": "हे सञ्जय, धर्मक्षेत्रे कुरुक्षेत्रे समवेताः युयुत्सवः मामकाः पाण्डवाः च किम् अकुर्वन्।",
       
-      "root_ids": [2, 100, 101, 6, 3],
-      "type_ids": [6, 0, 0, 1, 6],
-      "vibhakti_ids": [0, 1, 2, 0, 0],
-      "vacana_ids": [0, 1, 1, 1, 0],
-      "purusa_ids": [0, 0, 0, 1, 0],
+      "root_ids": [2, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 3],
+      "type_ids": [6, 2, 0, 0, 0, 0, 1, 0, 0, 2, 2, 0, 6],
+      "vibhakti_ids": [0, 0, 1, 7, 7, 1, 0, 1, 1, 0, 0, 0, 0],
+      "vacana_ids": [0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 0],
+      "purusa_ids": [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
       
-      "target_root_ids": [100, 101, 6, 3, 0],
+      "target_root_ids": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 3, 0],
       
       "adjacency_edges": [
-        {"src": 1, "tgt": 3, "link_type": "kartā-kriyā"},
-        {"src": 2, "tgt": 3, "link_type": "karma-kriyā"},
-        ...
+        {"src": 1, "tgt": 6, "link_type": "kartā-kriyā"},
+        {"src": 5, "tgt": 6, "link_type": "kartā-kriyā"},
+        {"src": 0, "tgt": 1, "link_type": "adjacent"},
+        {"src": 0, "tgt": 0, "link_type": "self"}
       ],
       
-      "seq_len": 5,
-      "num_edges": 6,
-      "sparsity": 0.24,
+      "seq_len": 13,
+      "num_edges": 41,
+      "sparsity": 0.2426,
       
       "tokens": [
-        {"surface": "रामः", "stem": "राम", "type": "subanta", "attributes": {"vibhakti": 1, "vacana": 1, "linga": "m"}},
-        {"surface": "गृहम्", "stem": "गृह", "type": "subanta", "attributes": {"vibhakti": 2, "vacana": 1, "linga": "n"}},
-        {"surface": "गच्छति", "stem": "गम्", "type": "tinanta", "attributes": {"purusa": 1, "vacana": 1, "lakara": "lat"}}
+        {"surface": "हे", "stem": "हे", "type": "avyaya", "attributes": {}},
+        {"surface": "सञ्जय", "stem": "सञ्जय", "type": "subanta", "attributes": {"vibhakti": 1, "vacana": 1}},
+        {"surface": "धर्मक्षेत्रे", "stem": "धर्मक्षेत्र", "type": "subanta", "attributes": {"vibhakti": 7, "vacana": 1}}
       ]
-    },
-    ...
+    }
   ],
   
   "statistics": {
-    "total_samples": 1242,
-    "total_tokens": 11523,
+    "total_samples": 697,
+    "total_tokens": 8324,
+    "vocab_size": 3378,
     "unk_rate": 0.0,
-    "seq_len": {"min": 3, "max": 34, "mean": 9.28},
-    "sparsity": {"min": 0.08, "max": 0.28, "mean": 0.23}
+    "seq_len": {"min": 4, "max": 46, "mean": 13.94},
+    "sparsity": {"min": 0.1025, "max": 0.4375, "mean": 0.2388},
+    "type_distribution": {"subanta": 5409, "tinanta": 1783, "avyaya": 1132}
   }
 }
 ```
@@ -163,12 +174,28 @@ Training data uses **factorized tensor representation** instead of flat `token_i
 |-------|------|-------------|
 | `root_ids` | `List[int]` | Root/stem IDs from ~4000 primitive vocabulary |
 | `type_ids` | `List[int]` | Token type: 0=subanta, 1=tiṅanta, 2=avyaya, etc. |
-| `vibhakti_ids` | `List[int]` | Case: 0=none, 1-7=cases, 8=vocative |
-| `vacana_ids` | `List[int]` | Number: 0=none, 1=sing, 2=dual, 3=plural |
-| `purusa_ids` | `List[int]` | Person: 0=none, 1=3rd, 2=2nd, 3=1st |
+| `vibhakti_ids` | `List[int]` | Case: 0=none, 1=nominative, 2=accusative, 3=instrumental, 4=dative, 5=ablative, 6=genitive, 7=locative, 8=vocative |
+| `vacana_ids` | `List[int]` | Number: 0=none, 1=singular, 2=dual, 3=plural |
+| `purusa_ids` | `List[int]` | Person: 0=none, 1=3rd (prathama), 2=2nd (madhyama), 3=1st (uttama) |
 | `target_root_ids` | `List[int]` | Shifted `root_ids` for next-token prediction |
-| `adjacency_edges` | `List[{...}]` | Sparse grammatical edges for attention mask |
+| `adjacency_edges` | `List[{...}]` | Sparse grammatical edges for attention supervision |
 | `tokens` | `List[MorphToken]` | Full morphological analysis (for debugging) |
+
+### Adjacency Edge Types
+
+The `adjacency_edges` encode grammatical relationships for sparse attention:
+
+| Link Type | Description | Example |
+|-----------|-------------|---------|
+| `kartā-kriyā` | Agent to verb | Nominative noun → verb |
+| `karma-kriyā` | Patient to verb | Accusative noun → verb |
+| `karaṇa-kriyā` | Instrument to verb | Instrumental noun → verb |
+| `sampradāna-kriyā` | Recipient to verb | Dative noun → verb |
+| `apādāna-kriyā` | Source to verb | Ablative noun → verb |
+| `adhikaraṇa-kriyā` | Location to verb | Locative noun → verb |
+| `viśeṣya-viśeṣaṇa` | Adjective to noun | Modifier relationships |
+| `adjacent` | Sequential tokens | Local context |
+| `self` | Self-attention | Each token to itself |
 
 ### Why Factorized Representation?
 
@@ -273,44 +300,64 @@ training_config = {
 
 ## Data Preparation
 
-### Using TrainingDataBuilder
+### Using GitaTrainingBuilder
+
+The `gita_training_builder.py` script converts raw Sanskrit text into factorized tensor training data.
 
 ```python
-from scripts.training_data_builder import TrainingDataBuilder
+from scripts.gita_training_builder import GitaTrainingBuilder
 
 # Initialize builder
-builder = TrainingDataBuilder()
+builder = GitaTrainingBuilder()
 
-# Process Gita text
-dataset = builder.process_file(
-    "gita.txt",
-    max_sentences=None,  # All sentences
-    chapters=None,       # All chapters
-)
+# Build dataset from gita.txt
+dataset = builder.build_dataset("data/gita.txt")
 
 # Save for training
-builder.save_dataset(dataset, "tests/data/gita_training.json")
+builder.save_dataset(dataset, "data/gita_training.json")
 ```
 
 ### CLI Usage
 
 ```bash
-# Full dataset
-python scripts/training_data_builder.py gita.txt -o training.json
-
-# Subset (chapters 1-3, max 10 sentences each)
-python scripts/training_data_builder.py gita.txt -o subset.json -c 1 2 3 -n 10
-
-# Verbose output
-python scripts/training_data_builder.py gita.txt -o training.json -v
+# Generate full training dataset from gita.txt
+python scripts/gita_training_builder.py data/gita.txt -o data/gita_training.json
 ```
+
+### Generated Dataset Statistics
+
+The Bhagavad Gita training data (`data/gita_training.json`) contains:
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Total Samples** | 697 | Sentences across 6+ chapters |
+| **Total Tokens** | 8,324 | Content tokens (excluding BOS/EOS) |
+| **Vocabulary Size** | 3,378 | Zero OOV by design |
+| **Sequence Length** | 4–46 | Min–Max (mean: 13.94) |
+| **Sparsity** | 0.10–0.44 | Adjacency matrix density (mean: 0.24) |
+
+**Token Type Distribution**:
+- `subanta` (nominals): 5,409 (65%)
+- `tinanta` (verbs): 1,783 (21%)
+- `avyaya` (indeclinables): 1,132 (14%)
+
+**Chapter Breakdown**:
+
+| Chapter | Name | Sentences | Tokens |
+|---------|------|-----------|--------|
+| 1 | अर्जुनविषादयोग | 24 | 536 |
+| 2 | साङ्ख्ययोग | 71 | 938 |
+| 3 | कर्मयोग | 42 | 537 |
+| 4 | ज्ञानकर्मसंन्यासयोग | 42 | 495 |
+| 5 | कर्मसंन्यासयोग | 29 | 352 |
+| 6 | ध्यानयोग | 47 | 549 |
 
 ### Dataset Files
 
 | File | Samples | Purpose |
 |------|---------|---------|
-| `gita_training.json` | 1,242 | Full training dataset |
-| `gita_samples.json` | 10 | Quick testing/debugging |
+| `data/gita_training.json` | 697 | Full training dataset (factorized tensors) |
+| `data/gita.txt` | — | Raw Sanskrit source text |
 
 ---
 
@@ -476,3 +523,69 @@ def generate(model, text: str, max_length: int = 50):
     
     return tokenizer.decode_factorized(factorized)
 ```
+
+---
+
+## Morphological Analysis
+
+### Current Implementation
+
+The `gita_training_builder.py` uses a **heuristic-based analyzer** for morphological analysis. This provides reasonable results for common patterns but can be enhanced with proper morphological backends.
+
+**Heuristic features**:
+- Common avyaya (indeclinable) detection: च, वा, न, तु, हि, एव, अपि, etc.
+- Verb ending recognition: -ति, -ते, -न्ति, -तु, -ष्यति, etc.
+- Case ending patterns: -ः (nom), -म् (acc), -ेन (inst), -ाय (dat), etc.
+
+### Improving Analysis with Vidyut
+
+For production-quality training data, integrate [vidyut-prakriya](../integration/vidyut.md):
+
+```python
+# Enhanced analyzer using vidyut
+from vidyut_py import Vyakarana
+
+def analyze_token_vidyut(surface: str) -> MorphToken:
+    """Analyze token using vidyut-prakriya for accurate morphology."""
+    v = Vyakarana()
+    
+    # Get all possible analyses
+    analyses = v.analyze(surface)
+    
+    if not analyses:
+        return fallback_heuristic(surface)
+    
+    # Select best analysis (typically first)
+    analysis = analyses[0]
+    
+    return {
+        "surface": surface,
+        "stem": analysis.pratipadika or analysis.dhatu,
+        "type": map_vidyut_type(analysis.pada_type),
+        "attributes": extract_vidyut_attributes(analysis)
+    }
+```
+
+### Morphological Backend Comparison
+
+| Backend | Accuracy | Speed | Coverage | Notes |
+|---------|----------|-------|----------|-------|
+| **Heuristic** | ~70% | Fast | Basic patterns | Current default |
+| **vidyut-prakriya** | ~95% | Medium | Comprehensive | Recommended |
+| **sanskrit-heritage** | ~90% | Slow | Classical texts | Alternative |
+| **samsadhani** | ~92% | Medium | Kāraka analysis | Adds semantic roles |
+
+For training data preparation, accuracy is critical. Consider using vidyut-prakriya for the final training dataset while using the heuristic analyzer for rapid prototyping.
+
+---
+
+## File Locations
+
+| File | Path | Description |
+|------|------|-------------|
+| Training data | `data/gita_training.json` | Generated training dataset |
+| Source text | `data/gita.txt` | Raw Bhagavad Gita prose |
+| Builder script | `scripts/gita_training_builder.py` | Training data generator |
+| Legacy builder | `scripts/training_data_builder.py` | Original builder (requires panini_lm) |
+| Gita parser | `scripts/gita_parser.py` | Chapter/sentence extraction |
+
