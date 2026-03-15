@@ -9,16 +9,18 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                     PANINI-LM PIPELINE                           │
+│                 (Factorized Embeddings Architecture)             │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   Raw Sanskrit Text                                              │
 │          │                                                       │
 │          ▼                                                       │
 │   ┌─────────────────────────────────────────────────────────┐   │
-│   │  PHASE 1: Morphological Ingestion                       │   │
+│   │  PHASE 1: Morphological Ingestion + Factorization       │   │
 │   │  • Sandhi resolution                                    │   │
 │   │  • Samāsa decomposition                                 │   │
 │   │  • Attribute extraction (vibhakti, vacana, etc.)        │   │
+│   │  • FACTORIZE → root_ids, type_ids, vibhakti_ids, etc.  │   │
 │   └───────────────────────┬─────────────────────────────────┘   │
 │                           │                                      │
 │              ┌────────────┴────────────┐                        │
@@ -31,7 +33,8 @@
 │   │  • Rule evaluation  │   │    EMBEDDING        │            │
 │   │  • Matrix M (N×N)   │   │  • E = Σ components │            │
 │   │                     │   │  • Q, K, V proj     │            │
-│   │                     │   │  • NO positional    │            │
+│   │  Uses: MorphTokens  │   │  Uses: Factorized   │            │
+│   │  (attributes)       │   │  ID tensors         │            │
 │   └──────────┬──────────┘   └──────────┬──────────┘            │
 │              │                         │                        │
 │              └────────────┬────────────┘                        │
@@ -40,7 +43,7 @@
 │   │  PHASE 3: Sparse Pāṇinian Attention                     │   │
 │   │  • O(N·k) complexity (vs O(N²))                         │   │
 │   │  • Grammatical routing via Matrix M                     │   │
-│   │  • Triton kernel or PyTorch fallback                    │   │
+│   │  • Q,K,V from factorized embeddings                     │   │
 │   └───────────────────────┬─────────────────────────────────┘   │
 │                           ▼                                      │
 │   ┌─────────────────────────────────────────────────────────┐   │
@@ -52,9 +55,10 @@
 │                           ▼                                      │
 │   ┌─────────────────────────────────────────────────────────┐   │
 │   │  PHASE 5: Grammar-Constrained Decoding                  │   │
-│   │  • Mask invalid tokens (P = 0)                          │   │
+│   │  • Output over ~4000 roots (not 50000 surface forms)    │   │
+│   │  • Mask invalid roots (P = 0)                          │   │
 │   │  • 100% grammatical correctness guarantee               │   │
-│   │  • Morphological state tracking                         │   │
+│   │  • Reconstruct surface form via morphology              │   │
 │   └─────────────────────────────────────────────────────────┘   │
 │                           │                                      │
 │                           ▼                                      │
@@ -69,12 +73,41 @@
 
 | Phase | Name | Input | Output | Key Innovation |
 |-------|------|-------|--------|----------------|
-| **1** | [Morphological Ingestion](phase1-morphology.md) | Raw UTF-8 text | `List[MorphToken]` | FST-based Sandhi/Samāsa resolution |
+| **1** | [Morphological Ingestion](phase1-morphology.md) | Raw UTF-8 text | `MorphTokens` + `FactorizedTokenBatch` | FST-based Sandhi/Samāsa + Factorization |
 | **2A** | [Symbolic Engine](phase2a-symbolic.md) | `List[MorphToken]` | Matrix M `(N×N)` | Deterministic grammatical routing |
-| **2B** | [Neural Engine](phase2b-neural.md) | `FactorizedTokenBatch` | Q, K, V tensors | Factorized embeddings (~4000 vocab) |
+| **2B** | [Neural Engine](phase2b-neural.md) | `FactorizedTokenBatch` | Q, K, V tensors | **Factorized embeddings** (~4000 vocab) |
 | **3** | [Sparse Attention](phase3-attention.md) | Q, K, V, M | Hidden states | O(N·k) hardware-optimized routing |
 | **4** | [Semantic Maturation](phase4-ffn.md) | Hidden states | Refined states | Compact FFN (1.5-2x expansion) |
-| **5** | [Grammar Decoding](phase5-decoding.md) | Logits + state | Valid tokens | 100% grammatical correctness |
+| **5** | [Grammar Decoding](phase5-decoding.md) | Logits + state | Valid tokens | 100% grammatical + Zero OOV |
+
+---
+
+## The Factorized Embedding Breakthrough
+
+### Vocabulary Comparison
+
+| Approach | Vocabulary | Embedding Params |
+|----------|------------|------------------|
+| Standard Transformer | 50,000+ surface forms | 25.6M |
+| **Panini-LM** | ~4,000 morphological primitives | **2.06M** |
+
+### How Factorization Works
+
+Instead of one embedding per inflected word, Panini-LM constructs embeddings by summing components:
+
+```python
+E(gacchati) = E(√gam)      # root embedding (~4000 options)
+            + E(tiṅanta)    # type embedding (7 options)
+            + E(laṭ)        # tense/mood (encoded in type)
+            + E(prathama)   # person embedding (4 options)
+            + E(eka-vacana) # number embedding (4 options)
+```
+
+### Benefits
+
+1. **Zero OOV**: Any valid inflection can be embedded, even if never seen
+2. **12× Parameter Reduction**: ~2M vs ~25M embedding parameters
+3. **Structural Encoding**: Morphological knowledge is preserved, not learned
 
 ---
 
@@ -82,22 +115,22 @@
 
 ```
 Phase 1 ──┬──► Phase 2A ──┐
-          │               │
+          │   (tokens)    │
           │               ├──► Phase 3 ──► Phase 4 ──► Phase 5
           │               │                              │
           └──► Phase 2B ──┘                              │
+            (factorized)                                 │
                                                          │
           Phase 1 (morph engine) ◄───────────────────────┘
-                    (called at inference for grammar mask)
+                    (called at inference for grammar mask
+                     and surface form reconstruction)
 ```
 
 ### Parallel Execution
 
-- **Phase 2A and 2B** can run in parallel after Phase 1
+- **Phase 2A and 2B** run in parallel after Phase 1
 - **Phase 3** requires both Phase 2A (Matrix M) and Phase 2B (Q, K, V)
 - **Phase 5** requires Phase 1's morphological engine at inference time
-
----
 
 ## Data Flow Types
 

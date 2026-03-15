@@ -1,6 +1,6 @@
 # Phase 1 — Morphological Ingestion
 
-> Resolve Sandhi and Samāsa, produce pure morphological tokens.
+> Resolve Sandhi and Samāsa, produce pure morphological tokens, and factorize for Phase 2B.
 
 ---
 
@@ -11,8 +11,21 @@ Phase 1 transforms raw Sanskrit text into a structured list of morphological tok
 - **Sandhi**: Euphonic sound changes at word boundaries
 - **Samāsa**: Compound word decomposition
 - **Attribute extraction**: Vibhakti, vacana, puruṣa, etc.
+- **Factorization**: Convert tokens to parallel ID tensors for Phase 2B
 
 This is the foundation for all subsequent phases.
+
+### Key Innovation: Factorized Output
+
+Phase 1 not only produces `MorphToken` objects, but also generates `FactorizedTokenBatch` — the 5 parallel ID tensors required by Phase 2B's factorized embedding architecture:
+
+```
+MorphToken → root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids
+```
+
+This enables:
+- **Zero OOV**: Any valid inflection maps to known IDs
+- **12× embedding reduction**: ~4,000 vocabulary vs 50,000+
 
 ---
 
@@ -27,7 +40,7 @@ This is the foundation for all subsequent phases.
 ### Output
 
 - **Type**: `Phase1Output` (see [data-contracts.md](../types/data-contracts.md))
-- **Contains**: List of `MorphToken` with attributes
+- **Contains**: List of `MorphToken` with attributes AND `FactorizedTokenBatch`
 
 ```python
 {
@@ -41,7 +54,15 @@ This is the foundation for all subsequent phases.
          "attributes": {"vibhakti": 2, "vacana": 1, "linga": "n"}},
         {"surface": "gacchati", "stem": "gam", "type": "tinanta",
          "attributes": {"purusa": 1, "vacana": 1, "lakara": "lat"}}
-    ]
+    ],
+    # NEW: Factorized tensors for Phase 2B (Zero OOV architecture)
+    "factorized": {
+        "root_ids": [100, 5, 101, 6],      # rāma, api, gṛha, gam
+        "type_ids": [0, 2, 0, 1],          # subanta, avyaya, subanta, tiṅanta
+        "vibhakti_ids": [1, 0, 2, 0],      # nom, none, acc, none
+        "vacana_ids": [1, 0, 1, 1],        # sing, none, sing, sing
+        "purusa_ids": [0, 0, 0, 1]         # none, none, none, 3rd
+    }
 }
 ```
 
@@ -92,17 +113,66 @@ Raw Text
 └────────┬────────┘
          │
          ▼
-List[MorphToken]
+┌─────────────────┐
+│ FACTORIZATION   │ Convert to parallel ID tensors
+│ (NEW)           │ root_ids, type_ids, vibhakti_ids, etc.
+└────────┬────────┘
+         │
+         ▼
+Phase1Output (tokens + factorized)
+    │
+    ├───► Phase 2A (tokens → Matrix M)
+    │
+    └───► Phase 2B (factorized → Embeddings)
 ```
 
 ### Pseudocode
 
 ```python
-def ingest_morphology(text: str) -> Phase1Output:
+# ID mappings for factorization (see data-contracts.md)
+TYPE_TO_ID = {"subanta": 0, "tinanta": 1, "avyaya": 2, "krdanta": 3, "taddhita": 4, "samasa": 5, "none": 6}
+VIBHAKTI_TO_ID = {"none": 0, 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, "vocative": 8}
+VACANA_TO_ID = {"none": 0, 1: 1, 2: 2, 3: 3}
+PURUSA_TO_ID = {"none": 0, 1: 1, 2: 2, 3: 3}
+
+
+def factorize_tokens(tokens: List[MorphToken], root_vocab: Dict) -> FactorizedTokenBatch:
     """
-    Phase 1: Morphological Ingestion
+    Convert MorphTokens to parallel ID tensors for Phase 2B factorized embeddings.
     
-    Deterministic transformation from raw text to structured tokens.
+    This is THE KEY STEP that enables:
+    - Zero OOV: Any valid inflection maps to known component IDs
+    - 12× embedding parameter reduction
+    """
+    root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids = [], [], [], [], []
+    
+    for token in tokens:
+        # Root/stem is the semantic core (~4000 vocabulary)
+        root_ids.append(root_vocab.get(token["stem"], 1))  # 1 = UNK
+        
+        # Grammatical dimensions (tiny vocabularies)
+        type_ids.append(TYPE_TO_ID.get(token["type"], 6))
+        attrs = token.get("attributes", {})
+        vibhakti_ids.append(VIBHAKTI_TO_ID.get(attrs.get("vibhakti"), 0))
+        vacana_ids.append(VACANA_TO_ID.get(attrs.get("vacana"), 0))
+        purusa_ids.append(PURUSA_TO_ID.get(attrs.get("purusa"), 0))
+    
+    return {
+        "root_ids": root_ids,
+        "type_ids": type_ids,
+        "vibhakti_ids": vibhakti_ids,
+        "vacana_ids": vacana_ids,
+        "purusa_ids": purusa_ids,
+    }
+
+
+def ingest_morphology(text: str, root_vocab: Dict) -> Phase1Output:
+    """
+    Phase 1: Morphological Ingestion + Factorization
+    
+    Deterministic transformation from raw text to:
+    1. Structured MorphTokens (for Phase 2A symbolic processing)
+    2. Factorized ID tensors (for Phase 2B neural embeddings)
     """
     # 1. Normalize Unicode
     normalized = unicodedata.normalize('NFC', text.strip())
@@ -128,8 +198,12 @@ def ingest_morphology(text: str) -> Phase1Output:
             "attributes": analysis.get("attributes", {})
         })
     
+    # 4. FACTORIZE for Phase 2B (Zero OOV architecture)
+    factorized = factorize_tokens(tokens, root_vocab)
+    
     return {
         "tokens": tokens,
+        "factorized": factorized,  # NEW: For Phase 2B
         "raw_input": text,
         "sandhi_splits": padas
     }

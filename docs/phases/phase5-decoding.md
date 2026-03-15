@@ -14,6 +14,28 @@ Phase 5 is the final output phase. It applies **hard grammar constraints** durin
 
 **Key insight**: By reusing the Phase 1 morphological engine at decode time, we can compute which tokens are legally continuable from the current morphological state.
 
+### Decoding Over ~4,000 Roots (Not 50,000 Surface Forms)
+
+Because Panini-LM uses **factorized embeddings**, the output vocabulary is ~4,000 morphological primitives (roots, stems), not 50,000+ inflected surface forms. The decoder:
+
+1. Predicts the next **root** from ~4,000 options
+2. Grammar mask constrains which roots are valid continuations
+3. Phase 1 morphological engine reconstructs the surface form
+
+```
+logits (~4000)  +  grammar_mask  →  constrained_logits
+      │                                    │
+      │                                    ▼
+      │                            sample next_root_id
+      │                                    │
+      │                                    ▼
+      │                    reconstruct surface form via Phase 1
+      ▼
+   "gam" (root_id=6)  →  "gacchati" (surface form)
+```
+
+This is the **Zero OOV property**: any valid inflection can be generated, even if the specific surface form was never seen in training.
+
 ---
 
 ## Input/Output Contract
@@ -69,20 +91,23 @@ class MorphologicalState:
 ```python
 def compute_grammar_mask(
     state: MorphologicalState,
-    vocab: MorphVocabulary
+    root_vocab: RootVocabulary  # ~4000 roots, NOT 50000 surface forms
 ) -> torch.Tensor:
     """
-    Generate mask over vocabulary based on current grammatical state.
+    Generate mask over ROOT vocabulary based on current grammatical state.
+    
+    Because we use factorized embeddings, we mask over ~4000 roots,
+    not 50000+ surface forms. This is more efficient and enables Zero OOV.
     
     Returns:
-        mask: (vocab_size,) tensor where:
-            - 0.0 = token is legal
-            - -inf = token is illegal
+        mask: (vocab_size=~4000,) tensor where:
+            - 0.0 = root is legal continuation
+            - -inf = root is illegal
     """
-    mask = torch.full((vocab.size,), float('-inf'))
+    mask = torch.full((root_vocab.size,), float('-inf'))  # ~4000
     
-    for idx, token_info in enumerate(vocab.token_list):
-        if is_legal_continuation(state, token_info):
+    for idx, root_info in enumerate(root_vocab.root_list):
+        if is_legal_continuation(state, root_info):
             mask[idx] = 0.0
     
     return mask
@@ -128,33 +153,45 @@ def is_legal_continuation(
 ```python
 def constrained_step(
     hidden: torch.Tensor,          # (batch, d_model) final position
-    lm_head: nn.Linear,            # (d_model -> vocab_size)
+    lm_head: nn.Linear,            # (d_model -> ~4000 roots)
     state: MorphologicalState,
-    vocab: MorphVocabulary,
+    root_vocab: RootVocabulary,    # ~4000 roots (factorized vocabulary)
     temperature: float = 1.0
-) -> Tuple[int, MorphologicalState]:
+) -> Tuple[int, MorphologicalState, str]:
     """
     One step of grammar-constrained autoregressive decoding.
     
+    Key difference from standard LLMs:
+    - Output space is ~4000 roots, not 50000+ surface forms
+    - Grammar mask operates over morphological primitives
+    - Surface form is reconstructed via morphological rules
+    
     Returns:
-        token_id: Selected token (guaranteed grammatical)
+        root_id: Selected root (guaranteed grammatical)
         new_state: Updated morphological state
+        surface_form: Reconstructed inflected word
     """
-    # Step 1: Compute raw logits
-    logits = lm_head(hidden)  # (vocab_size,)
+    # Step 1: Compute raw logits over ~4000 roots
+    logits = lm_head(hidden)  # (vocab_size=~4000,)
     
-    # Step 2: Apply grammar mask
-    grammar_mask = compute_grammar_mask(state, vocab)
-    masked_logits = logits + grammar_mask  # -inf for illegal tokens
+    # Step 2: Apply grammar mask (over roots, not surface forms)
+    grammar_mask = compute_grammar_mask(state, root_vocab)
+    masked_logits = logits + grammar_mask  # -inf for illegal roots
     
-    # Step 3: Sample from legal tokens only
+    # Step 3: Sample from legal roots only
     probs = F.softmax(masked_logits / temperature, dim=-1)
-    token_id = torch.multinomial(probs, num_samples=1).item()
+    root_id = torch.multinomial(probs, num_samples=1).item()
     
     # Step 4: Update morphological state
-    new_state = update_state(state, vocab.token_list[token_id])
+    root_info = root_vocab.root_list[root_id]
+    new_state = update_state(state, root_info)
     
-    return token_id, new_state
+    # Step 5: Reconstruct surface form from root + grammatical state
+    # This is where Zero OOV happens: we generate valid inflections
+    # even for forms never seen in training
+    surface_form = reconstruct_surface(root_info, new_state)
+    
+    return root_id, new_state, surface_form
 ```
 
 ### State Update

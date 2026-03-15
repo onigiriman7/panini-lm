@@ -10,13 +10,29 @@ Phase 2A processes morphological tokens from Phase 1 to produce a sparse **Adjac
 
 This is the **Symbolic Track** — purely deterministic, no learned parameters.
 
+### Parallel Execution with Phase 2B
+
+Phase 2A and 2B run in parallel after Phase 1:
+
+```
+Phase 1 Output
+      │
+      ├──► Phase 2A (tokens → Matrix M)     ← Symbolic (no params)
+      │         Uses: MorphToken attributes
+      │
+      └──► Phase 2B (factorized → Q,K,V)    ← Neural (learned params)  
+                Uses: FactorizedTokenBatch
+```
+
+Phase 2A uses the `MorphToken` list (attributes like vibhakti, vacana, puruṣa) to determine grammatical validity. It does NOT use the factorized tensors — those go directly to Phase 2B.
+
 ---
 
 ## Input/Output Contract
 
 ### Input
 
-- **Type**: `List[MorphToken]` from Phase 1
+- **Type**: `List[MorphToken]` from Phase 1 (NOT the factorized tensors)
 - **Requirements**: Each token must have `type` and `attributes`
 
 ### Output

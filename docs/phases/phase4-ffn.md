@@ -12,7 +12,19 @@ Phase 4 applies a feed-forward network (FFN) to the attention output from Phase 
 
 1. Grammatical structure is resolved in Phases 2A/3 (saved capacity)
 2. Position encodings removed (no positional patterns to learn)
-3. Sanskrit compound semantics are structurally compositional
+3. **Factorized embeddings** already encode morphological structure
+4. Sanskrit compound semantics are structurally compositional
+
+### Why Reduced Expansion Works
+
+Standard transformers use 4× FFN expansion to learn syntactic patterns from raw token sequences. Panini-LM needs less capacity because:
+
+| Component | Standard Transformer | Panini-LM |
+|-----------|---------------------|-----------|
+| Syntax | Learned in FFN | Offloaded to Phase 2A |
+| Morphology | Embedded in tokens | **Factorized** (structural) |
+| Position | Learned patterns | None (free word order) |
+| Semantics | Full FFN | 1.5-2× FFN (semantic only) |
 
 ---
 

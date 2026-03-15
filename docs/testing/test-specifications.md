@@ -387,27 +387,78 @@ class TestTokenizer:
 
 ```python
 import torch
-from panini_lm.phase2b_neural import EmbeddingLayer
+from panini_lm.phase2b_neural import PaninianEmbedding
 
-class TestEmbedding:
-    """Tests for embedding layer."""
+class TestFactorizedEmbedding:
+    """Tests for FACTORIZED embedding layer (Zero OOV architecture)."""
     
     def test_output_shape(self):
-        """Embedding output should be (batch, seq, d_model)."""
-        embed = EmbeddingLayer(vocab_size=1000, d_model=512)
-        ids = torch.tensor([[1, 2, 3], [4, 5, 6]])  # (2, 3)
+        """Factorized embedding output should be (batch, seq, d_model)."""
+        embed = PaninianEmbedding(d_model=512)
         
-        output = embed(ids)
-        assert output.shape == (2, 3, 512)
+        # Factorized inputs: 5 parallel ID tensors
+        root_ids = torch.tensor([[100, 101, 6]])      # rāma, gṛha, gam
+        type_ids = torch.tensor([[0, 0, 1]])          # subanta, subanta, tiṅanta
+        vibhakti_ids = torch.tensor([[1, 2, 0]])      # nom, acc, none
+        vacana_ids = torch.tensor([[1, 1, 1]])        # sing, sing, sing
+        purusa_ids = torch.tensor([[0, 0, 1]])        # none, none, 3rd
+        
+        output = embed(root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids)
+        assert output.shape == (1, 3, 512)  # (batch, seq, d_model)
     
     def test_no_positional_encoding(self):
-        """Same token at different positions should have same embedding."""
-        embed = EmbeddingLayer(vocab_size=1000, d_model=512)
-        ids = torch.tensor([[5, 10, 5]])  # token 5 at positions 0 and 2
+        """Same factorized input at different positions should have same embedding."""
+        embed = PaninianEmbedding(d_model=512)
         
-        output = embed(ids)
-        # Positions 0 and 2 have same token, should have same embedding
+        # Same root+grammatical features at positions 0 and 2
+        root_ids = torch.tensor([[100, 101, 100]])    # rāma at pos 0 and 2
+        type_ids = torch.tensor([[0, 0, 0]])          # all subanta
+        vibhakti_ids = torch.tensor([[1, 2, 1]])      # nom, acc, nom
+        vacana_ids = torch.tensor([[1, 1, 1]])        # all singular
+        purusa_ids = torch.tensor([[0, 0, 0]])        # all none
+        
+        output = embed(root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids)
+        # Positions 0 and 2 have same factorized input → same embedding
         assert torch.allclose(output[0, 0], output[0, 2])
+    
+    def test_factorized_composition(self):
+        """Different inflections of same root should share root component."""
+        embed = PaninianEmbedding(d_model=512)
+        
+        # "gacchati" (3rd person) vs "gacchāmi" (1st person)
+        # Both share √gam (root_id=6)
+        root_ids = torch.tensor([[6, 6]])
+        type_ids = torch.tensor([[1, 1]])             # both tiṅanta
+        vibhakti_ids = torch.tensor([[0, 0]])         # N/A for verbs
+        vacana_ids = torch.tensor([[1, 1]])           # both singular
+        purusa_ids = torch.tensor([[1, 3]])           # 3rd vs 1st person
+        
+        emb = embed(root_ids, type_ids, vibhakti_ids, vacana_ids, purusa_ids)
+        
+        # Difference should equal (purusa_embed[1] - purusa_embed[3])
+        diff = emb[0, 0] - emb[0, 1]
+        expected_diff = embed.purusa_embed.weight[1] - embed.purusa_embed.weight[3]
+        assert torch.allclose(diff, expected_diff)
+    
+    def test_zero_oov(self):
+        """
+        Zero OOV: Model can embed any valid inflection, even unseen forms.
+        """
+        embed = PaninianEmbedding(d_model=512)
+        
+        # A rare form the model may never have seen in training
+        # √kṛ + optative + 2nd person + dual
+        output = embed(
+            root_ids=torch.tensor([[50]]),        # √kṛ
+            type_ids=torch.tensor([[1]]),         # tiṅanta
+            vibhakti_ids=torch.tensor([[0]]),     # none
+            vacana_ids=torch.tensor([[2]]),       # dual
+            purusa_ids=torch.tensor([[2]]),       # 2nd person
+        )
+        
+        # Should NOT raise error, should produce valid embedding
+        assert output.shape == (1, 1, 512)
+        assert not torch.isnan(output).any()
 ```
 
 #### `test_qkv_projection`
@@ -575,46 +626,51 @@ class TestSemanticFFN:
 from panini_lm.phase5_decoding import generate_grammar_mask
 
 class TestGrammarMask:
-    """Tests for grammar constraint mask generation."""
+    """
+    Tests for grammar constraint mask generation.
+    
+    Note: Panini-LM uses ~4000 root vocabulary (factorized embeddings),
+    NOT 50,000+ surface forms like standard LLMs.
+    """
     
     def test_mask_shape(self):
-        """Mask should match vocab size."""
+        """Mask should match root vocabulary size (~4000)."""
         state = {"last_token": {"type": "subanta", "attributes": {"vibhakti": 1}}}
-        vocab_size = 10000
+        root_vocab_size = 4000  # Factorized vocabulary, not 50000
         
-        mask = generate_grammar_mask(state, vocab_size)
-        assert mask["mask"].shape == (vocab_size,)
+        mask = generate_grammar_mask(state, root_vocab_size)
+        assert mask["mask"].shape == (root_vocab_size,)
     
     def test_mask_values(self):
         """Mask values should be 0.0 or -inf."""
         state = {"last_token": {"type": "subanta", "attributes": {}}}
         
-        mask = generate_grammar_mask(state, vocab_size=100)
+        mask = generate_grammar_mask(state, root_vocab_size=4000)
         M = mask["mask"]
         
         valid = (M == 0.0) | (M == float('-inf'))
         assert valid.all()
     
-    def test_valid_tokens_exist(self):
-        """At least some tokens should be valid."""
+    def test_valid_roots_exist(self):
+        """At least some roots should be valid continuations."""
         state = {"last_token": {"type": "subanta", "attributes": {}}}
         
-        mask = generate_grammar_mask(state, vocab_size=100)
-        assert mask["valid_token_count"] > 0
+        mask = generate_grammar_mask(state, root_vocab_size=4000)
+        assert mask["valid_root_count"] > 0
     
     def test_constrained_logits(self):
-        """Masked logits should zero invalid probabilities."""
+        """Masked logits should zero invalid root probabilities."""
         from panini_lm.phase5_decoding import apply_grammar_constraint
         
-        logits = torch.randn(100)
-        mask = torch.zeros(100)
-        mask[50:] = float('-inf')  # Mask out tokens 50-99
+        logits = torch.randn(4000)  # ~4000 roots
+        mask = torch.zeros(4000)
+        mask[2000:] = float('-inf')  # Mask out roots 2000-3999
         
         constrained = apply_grammar_constraint(logits, mask)
         probs = torch.softmax(constrained, dim=-1)
         
-        # Masked tokens should have zero probability
-        assert probs[50:].sum() < 1e-6
+        # Masked roots should have zero probability
+        assert probs[2000:].sum() < 1e-6
 ```
 
 #### `test_grammatical_correctness`

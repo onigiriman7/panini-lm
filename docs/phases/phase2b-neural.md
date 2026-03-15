@@ -382,15 +382,34 @@ def test_zero_oov_for_inflections():
 
 def test_batch_consistency():
     """Batched and individual processing should match."""
-    engine = NeuralEngine(vocab_size=1000, d_model=512, num_heads=8)
+    engine = NeuralEngine(d_model=512, num_heads=8)
     
-    seq1 = torch.tensor([[1, 2, 3]])
-    seq2 = torch.tensor([[4, 5, 6]])
-    batch = torch.tensor([[1, 2, 3], [4, 5, 6]])
+    # Factorized batch inputs
+    batch1 = {
+        "root_ids": torch.tensor([[1, 2, 3]]),
+        "type_ids": torch.tensor([[0, 1, 0]]),
+        "vibhakti_ids": torch.tensor([[1, 0, 2]]),
+        "vacana_ids": torch.tensor([[1, 1, 1]]),
+        "purusa_ids": torch.tensor([[0, 1, 0]]),
+    }
+    batch2 = {
+        "root_ids": torch.tensor([[4, 5, 6]]),
+        "type_ids": torch.tensor([[1, 0, 2]]),
+        "vibhakti_ids": torch.tensor([[0, 3, 0]]),
+        "vacana_ids": torch.tensor([[2, 1, 0]]),
+        "purusa_ids": torch.tensor([[1, 0, 0]]),
+    }
+    combined = {
+        "root_ids": torch.tensor([[1, 2, 3], [4, 5, 6]]),
+        "type_ids": torch.tensor([[0, 1, 0], [1, 0, 2]]),
+        "vibhakti_ids": torch.tensor([[1, 0, 2], [0, 3, 0]]),
+        "vacana_ids": torch.tensor([[1, 1, 1], [2, 1, 0]]),
+        "purusa_ids": torch.tensor([[0, 1, 0], [1, 0, 0]]),
+    }
     
-    out1 = engine(seq1)["embeddings"]
-    out2 = engine(seq2)["embeddings"]
-    out_batch = engine(batch)["embeddings"]
+    out1 = engine(batch1)["embeddings"]
+    out2 = engine(batch2)["embeddings"]
+    out_batch = engine(combined)["embeddings"]
     
     assert torch.allclose(out_batch[0], out1[0])
     assert torch.allclose(out_batch[1], out2[0])

@@ -6,9 +6,30 @@
 
 ## Overview
 
-Phase 3 combines the outputs of Phase 2A (Matrix M) and Phase 2B (Q, K, V) to compute **sparse attention** that only considers grammatically valid token relationships.
+Phase 3 combines the outputs of Phase 2A (Matrix M) and Phase 2B (Q, K, V from factorized embeddings) to compute **sparse attention** that only considers grammatically valid token relationships.
 
 **Key innovation**: Instead of computing all N² attention scores, only compute scores for valid grammatical connections (typically k ≈ 2-3 per token), achieving **O(N·k)** complexity.
+
+### Input Sources
+
+```
+Phase 2A (Symbolic)           Phase 2B (Neural)
+───────────────────           ─────────────────
+│ Matrix M (N×N)   │           │ Q, K, V from   │
+│ • 0.0 = valid    │           │ FACTORIZED     │
+│ • -∞ = invalid   │           │ EMBEDDINGS     │
+└──────────────────┘           │                │
+         │                      │ E = Σ components│
+         │                      └────────────────┘
+         │                               │
+         └───────────────┬───────────────┘
+                       │
+                       ▼
+              Phase 3: Sparse Attention
+              Attention(Q,K,V,M)
+```
+
+Note: The Q, K, V tensors come from **factorized embeddings** (sum of root + grammatical component vectors), not from standard vocabulary lookup.
 
 ---
 
@@ -16,7 +37,8 @@ Phase 3 combines the outputs of Phase 2A (Matrix M) and Phase 2B (Q, K, V) to co
 
 ### Input
 
-- **Q, K, V**: From Phase 2B, shape `(batch, heads, seq, head_dim)`
+- **Q, K, V**: From Phase 2B factorized embeddings, shape `(batch, heads, seq, head_dim)`
+  - These are derived from `E(root) + E(type) + E(vibhakti) + E(vacana) + E(puruṣa)`
 - **M**: Adjacency matrix from Phase 2A, shape `(seq, seq)`
 
 ### Output
@@ -34,7 +56,7 @@ Phase 3 combines the outputs of Phase 2A (Matrix M) and Phase 2B (Q, K, V) to co
 
 ## Dependencies
 
-- **Input**: Phase 2A (Matrix M), Phase 2B (Q, K, V)
+- **Input**: Phase 2A (Matrix M), Phase 2B (Q, K, V from factorized embeddings)
 - **External**: [Triton](../integration/triton.md) (GPU) or PyTorch (fallback)
 - **Output consumers**: Phase 4 (Semantic Maturation)
 

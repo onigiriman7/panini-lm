@@ -12,11 +12,11 @@ Panini-LM relies on several external libraries for morphological analysis, symbo
 
 | Library | Phase | Purpose | Required |
 |---------|-------|---------|----------|
-| [vidyut-prakriya](vidyut.md) | 1 | Production morphological analysis | Yes (or fallback) |
+| [vidyut-prakriya](vidyut.md) | 1 | Production morphological analysis + factorization | Yes (or fallback) |
 | [sanskrit-heritage](sanskrit-heritage.md) | 1 | Fallback morphological analysis | Fallback only |
 | [samsadhani](samsadhani.md) | 2A | Kāraka relationship API | Optional |
 | [Triton](triton.md) | 3 | Block-sparse attention kernel | Optional (GPU) |
-| PyTorch | 2B-5 | Neural components | Yes |
+| PyTorch | 2B-5 | Neural components (factorized embeddings) | Yes |
 
 ---
 
@@ -49,12 +49,15 @@ pip install -e .
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                       PANINI-LM CORE                            │
+│                 (Factorized Embedding Architecture)             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
 │  │  Phase 1    │    │  Phase 2A   │    │  Phase 3    │         │
 │  │  Morphology │    │  Symbolic   │    │  Attention  │         │
-│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘         │
+│  │  + FACTOR-  │    └──────┬──────┘    └──────┬──────┘         │
+│  │  IZATION    │           │                  │                 │
+│  └──────┬──────┘           │                  │                 │
 │         │                  │                  │                 │
 ├─────────┼──────────────────┼──────────────────┼─────────────────┤
 │         ▼                  ▼                  ▼                 │
@@ -69,6 +72,15 @@ pip install -e .
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### What Each Library Provides
+
+| Library | Output for Panini-LM |
+|---------|---------------------|
+| vidyut/heritage | MorphTokens + **FactorizedTokenBatch** (5 parallel ID tensors) |
+| samsadhani | Kāraka relationships for training data |
+| Triton | O(N·k) sparse attention with true FLOP savings |
+| PyTorch | Factorized embedding layers, Q/K/V projection |
 
 ---
 
