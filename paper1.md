@@ -144,7 +144,7 @@ Each sentence becomes a sequence of grammatical feature vectors. Primitives that
 
 ```
 total sentences        :  ~700
-total primitives       :  ~18,000 (estimated)
+total primitives       :  ~2000 (estimated)
 unique dhātu types     :  ~200
 unique prātipadika     :  ~400
 unique avyaya          :  ~50
