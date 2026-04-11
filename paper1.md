@@ -84,9 +84,9 @@ Each grammatical feature vector $g_i$ is encoded as a concatenation of one-hot v
 
 $$\mathbf{x}_i = [\text{onehot}(f_1^{(i)}) \| \text{onehot}(f_2^{(i)}) \| \cdots \| \text{onehot}(f_k^{(i)})]$$
 
-The total input dimensionality is the sum of all feature cardinalities:
+Each nullable feature (all except primitive type) includes an explicit NULL class, giving:
 
-$$d_{input} = 3 + 10 + 3 + 3 + 3 + 2 + 8 + 3 + 19 = 54$$
+$$d_{input} = 3 + 11 + 4 + 4 + 4 + 3 + 9 + 4 + 20 = 62$$
 
 ### 4.2 Architecture
 

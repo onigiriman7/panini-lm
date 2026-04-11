@@ -50,7 +50,7 @@ $$\mathbf{x}_i = [\text{onehot}(f_1^{(i)}) \| \text{onehot}(f_2^{(i)}) \| \cdots
 
 $$d_{\text{input}} = 3 + 11 + 4 + 4 + 4 + 3 + 9 + 4 + 20 = 62$$
 
-> **Note:** The paper's section 4.1 states $d_{\text{input}} = 54$ by counting only the non-NULL classes. The actual implementation must include the NULL class for each feature that can be NULL (8 features × 1 NULL each = +8), giving 62. The paper should be reconciled with the implementation. If NULL values are encoded as the all-zeros vector within each feature's one-hot slot (i.e., no dedicated NULL index), then $d_{\text{input}} = 54$ holds. **Decision to be made: explicit NULL index vs. all-zeros encoding.**
+> **Decision (resolved):** Each nullable feature includes an explicit NULL class at index 0. This means every feature slot in the one-hot vector has exactly one 1 (including NULL positions), giving $d_{\text{input}} = 62$. The paper's section 4.1 has been updated accordingly.
 
 ### Step 3: Sequence assembly
 
